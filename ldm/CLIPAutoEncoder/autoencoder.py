@@ -39,12 +39,15 @@ class CLIPAE(AutoencoderKL):
         self.cond2_order = list(config.cond2_order)
         self.cond3_order = list(config.cond3_order)
 
+        self.condloss_ratio = config.condloss_ratio
+
         # ! ---------------init cond_stage_model----------------
         model = VisionTransformer(img_size=config.cond_size, 
                                   patch_size=16, 
                                   in_c=self.cond_num, 
                                   embed_dim=3*16*16, 
-                                  num_heads=12, 
+                                  num_heads=12,
+                                  depth=12, 
                                   drop_ratio=0.1, 
                                   attn_drop_ratio=0.1, 
                                   drop_path_ratio=0.1)
@@ -58,7 +61,6 @@ class CLIPAE(AutoencoderKL):
         input: (1,1,256,256)
         output: (1,4,16,16,16) match the latent code z.
         """
-
         cond = self.cond_stage_model(cond)
         return cond  # ? (1,4,16,16,16) match the latent code z.
     def cond_repeat(self, cond):
@@ -75,7 +77,7 @@ class CLIPAE(AutoencoderKL):
         """
         x = x.view(x.size(0), -1)
         y = y.view(y.size(0), -1)
-        return F.cosine_similarity(x, y, dim=1)
+        return 1 - F.cosine_similarity(x, y, dim=1) # ？ As a loss function
     def forward(self, input, sample_posterior=True):
         posterior = self.encode(input)
         if sample_posterior:
@@ -94,23 +96,26 @@ class CLIPAE(AutoencoderKL):
         inputs = batch["image"] # ? (1, 1, 128, 128, 128)
 
         # ? get condition imgs & repeat & permute & concat
+        cond = []
         if 1 in self.cond_nums:
             cond1 = torch.as_tensor(batch["cond1"])
             cond1 = self.cond_repeat(cond1).permute(self.cond1_order)
+            cond.append(cond1)
         else:
             cond1 = None
         if 2 in self.cond_nums:
             cond2 = torch.as_tensor(batch["cond2"])
             cond2 = self.cond_repeat(cond2).permute(self.cond2_order)
+            cond.append(cond2)
         else:
             cond2 = None
         if 3 in self.cond_nums:
             cond3 = torch.as_tensor(batch["cond3"])
             cond3 = self.cond_repeat(cond3).permute(self.cond3_order)
+            cond.append(cond3)
         else:
             cond3 = None
-        
-        cond = [cond1, cond2, cond3]
+
         cond_cat = torch.cat(cond, dim=1) if self.cond_num != 0 else None # ? (1, 2, 256, 256, 256)
 
 
@@ -129,19 +134,22 @@ class CLIPAE(AutoencoderKL):
             last_layer=self.get_last_layer(),
             split="train",
         )
-        opt_ae.zero_grad()
-        self.manual_backward(aeloss)
-        opt_ae.step()
 
-        # train the vit
         cond_latent = self.condition_vit_encode(cond_cat)
         condloss = self.cossim(z, cond_latent)
+
+        cliploss = aeloss + self.condloss_ratio * condloss # ? Key loss
+
+        opt_ae.zero_grad()
+        self.manual_backward(cliploss)
+        opt_ae.step()
         opt_cond.zero_grad()
-        self.manual_backward(condloss)
+        self.manual_backward(cliploss)
         opt_cond.step()
 
         self.log("aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log("condloss", condloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
+        self.log("cliploss", cliploss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False, sync_dist=self.sync_dist)
 
         # train the discriminator+vit
@@ -156,34 +164,55 @@ class CLIPAE(AutoencoderKL):
             last_layer=self.get_last_layer(),
             split="train",
         )
-        opt_disc.zero_grad()
-        self.manual_backward(discloss)
-        opt_disc.step()
-
-        # train the vit
         cond_latent = self.condition_vit_encode(cond_cat)
         condloss = self.cossim(z, cond_latent)
+
+        cliploss = discloss + self.condloss_ratio * condloss # ? Key loss
+
+        opt_disc.zero_grad()
+        self.manual_backward(cliploss)
+        opt_disc.step()
         opt_cond.zero_grad()
-        self.manual_backward(condloss)
+        self.manual_backward(cliploss)
         opt_cond.step()
 
         self.log("discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log("condloss", condloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
+        self.log("cliploss", cliploss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False, sync_dist=self.sync_dist)
 
     def validation_step(self, batch, batch_idx):
         if self.current_epoch % 10 == 0:
             inputs = batch["image"]
+            cond = []
+            if 1 in self.cond_nums:
+                cond1 = torch.as_tensor(batch["cond1"])
+                cond1 = self.cond_repeat(cond1).permute(self.cond1_order)
+                cond.append(cond1)
+            else:
+                cond1 = None
+            if 2 in self.cond_nums:
+                cond2 = torch.as_tensor(batch["cond2"])
+                cond2 = self.cond_repeat(cond2).permute(self.cond2_order)
+                cond.append(cond2)
+            else:
+                cond2 = None
+            if 3 in self.cond_nums:
+                cond3 = torch.as_tensor(batch["cond3"])
+                cond3 = self.cond_repeat(cond3).permute(self.cond3_order)
+                cond.append(cond3)
+            else:
+                cond3 = None
+
+            cond_cat = torch.cat(cond, dim=1) if self.cond_num != 0 else None # ? (1, 2, 256, 256, 256)
             # print(inputs.shape)
-            reconstructions, posterior = self(inputs)
-
-            # reconstructions = torch.clamp(reconstructions, min=-1, max=1)
-            # reconstructions = (reconstructions + 1) * 127.5
-
-            # inputs = torch.clamp(inputs, min=-1, max=1)
-            # inputs = (inputs + 1) * 127.5
-
+            reconstructions, _, z= self(inputs)
             rec_loss = F.mse_loss(reconstructions, inputs)
+        
+            cond_latent = self.condition_vit_encode(cond_cat)
+            condloss = self.cossim(z, cond_latent)
+
+            cliploss = rec_loss + self.condloss_ratio * condloss
 
             # reconstructions = reconstructions.squeeze(0).permute(1, 0, 2, 3)
             # reconstructions = reconstructions.type(torch.uint8)
@@ -197,6 +226,8 @@ class CLIPAE(AutoencoderKL):
             # self.logger.experiment.add_image("val_inputs", grid, self.global_step)
 
             self.log("val/rec_loss", rec_loss, sync_dist=self.sync_dist)
+            self.log("val/condloss", condloss, sync_dist=self.sync_dist)
+            self.log("val/cliploss", cliploss, sync_dist=self.sync_dist)
 
     def img_saver(self, img, post_fix, i_type=".nii", meta_data=None, filename=None, **kwargs):
         """
@@ -307,11 +338,16 @@ def main(config):
     # output, _ = model(input)
     # print(output.shape)
     # model = VisionTransformer(img_size=config.cond_size, patch_size=16, in_chans=1, embed_dim=8*16*16*16, num_heads=16, drop_rate=0.1, attn_drop_rate=0.1, drop_path_rate=0.1)
-    output1, output2 = model(input)
+    output1, _, output2 = model(input)
     # y = model.condition_vit_encode(input)
     print(output1.shape)
     print(output2.shape)
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    cos = nn.CosineSimilarity(dim=1)
+    input1 = torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.float)
+    input2 = torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.float)
+    output = cos(input1, input2)
+    print(output)
