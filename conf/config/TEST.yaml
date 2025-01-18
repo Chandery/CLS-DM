@@ -1,0 +1,111 @@
+name: 'ldm'
+#****** Data settings ******
+image_size: 128 # resize input images to this size
+# pad_channel: 16
+resize_size: [128,128,128]
+img_resize_size: [128,128]
+# cond_path: "/disk/ssy/data/drr/result/split/zhouguDR" 
+# data_path: "/disk/ssy/data/drr/zhougu/zhougunii"
+
+cond_path: "/disk/ssy/data/drr/result/split/feijiejieDR/" 
+data_path: "/disk/ssy/data/drr/feijiejie/all/"
+
+# cond_path: "/disk/ssy/data/drr/result/split/penguDR/" 
+# data_path: "/disk/ssy/data/drr/pengu/all/"
+
+output_dir : "./logs/${config.name}"  # the traning logs saved
+
+latent_diffusion:
+  # ckpt: None
+  # ckpt_path: "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/ldm/pl_train_ldm-2024-06-06/21-23-21/pl_train_autoencoder-epoch198-val_rec_loss0.00.ckpt"
+  base_learning_rate: 5.0e-5
+  linear_start: 0.0015
+  linear_end: 0.0155
+  num_timesteps_cond: 1
+  high_low_mode: False
+
+
+  log_every_t: 200
+  timesteps: 1000
+  loss_type: l1
+
+  first_stage_key: "image"
+  cond_stage_key: "image"
+
+  image_size: 8
+  channels: 4
+
+  cond_stage_trainable: False
+  concat_mode: True
+  scale_by_std: True
+  monitor: 'val/loss_simple_ema'
+  first_stage_config:
+    base_learning_rate: 0.0001
+    sync_dist: True
+    # params:
+    monitor: "val/rec_loss"
+    # ckpt_path: "/disk/cc/Xray-Diffsuion/logs/autoencoder/pl_train_autoencoder-2024-07-31-zhougu/22-19-53/pl_train_autoencoder-epoch60-val_rec_loss375.21.ckpt"
+    # ckpt_path: "/disk/cc/Xray-Diffsuion/logs/autoencoder/pl_train_autoencoder-2024-08-01/22-58-30-fei/pl_train_autoencoder-epoch230-val_rec_loss283.67.ckpt"
+    ckpt_path: "/disk/cc/Xray-Diffsuion/logs/autoencoder/pl_train_autoencoder-2024-09-15/13-46-45/pl_train_autoencoder-epoch340-val_rec_loss0.04.ckpt"
+    # ckpt_path: "/disk/cc/Xray-Diffsuion/logs/autoencoder/pl_train_autoencoder-2024-08-03/10-58-45-pengu/pl_train_autoencoder-epoch550-val_rec_loss0.06.ckpt"
+    embed_dim: 4
+    ddconfig:
+      double_z: True
+      z_channels: 4
+      resolution: 128
+      in_channels: 1
+      out_ch: 1
+      ch: 32
+      ch_mult: [1,2,2,2,4]  # num_down = len(ch_mult)-1
+      num_res_blocks: 2
+      attn_resolutions: []
+      dropout: 0.0
+    lossconfig:
+      disc_start: 10000
+      kl_weight: 1.0e-4
+      disc_weight: 0.5
+      highlow_weight: 0
+      high_limit: 0.04
+      low_limit: 0.04
+      disc_in_channels: 1
+      perceptual_weight: 0
+  cond_stage_config: 
+    cond_ckpt_path: "/disk/cyq/2024/pretrained_weights/lvmmed_vit.pth"
+
+  unet_config:
+    dims: 3
+    image_size: 8
+    in_channels: 12
+    out_channels: 4
+    model_channels: 192
+    attention_resolutions: [1,2,4,8]
+    num_res_blocks: 2
+    channel_mult: [1,2,3,4]
+    num_heads: 8
+    use_spatial_transformer: False
+    use_scale_shift_norm: True
+    resblock_updown: True
+
+    # context_dim: 4
+    transformer_depth: 1
+    use_checkpoint: true # save_memory
+    legacy: False
+
+  scheduler_config:
+    warm_up_steps: [100000]
+    cycle_lengths: [10000000000000]
+    f_start: [1.e-6]
+    f_max: [1.]
+    f_min: [1.]
+
+
+trainer:
+  benchmark: True
+  # accumulate_grad_batches: 2
+  devices: [0]
+  # devices: [0]
+  accelerator: "auto"
+  max_epochs: 1000
+  # fast_dev_run: True
+  # strategy: "ddp_find_unused_parameters_true"
+

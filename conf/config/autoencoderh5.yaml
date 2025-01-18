@@ -1,0 +1,72 @@
+name: 'autoencoderh5'
+#****** Data settings ******
+image_size: 128 # resize input images to this size
+cond_size: 256 # resize condition images to this size
+# pad_channel: 16
+resize_size: [128,128,128]
+# cond_path: "/nvme/Pancreas-Dataset/pancreas_diff/cond_data/"
+# data_path: "/disk/ssy/data/drr/zhougu/zhougunii"   #zhougu
+data_path: "/disk/cdy/LIDC-HDF5-256"   #feijiejie
+dataroot: "/disk/cdy/LIDC-HDF5-256"   #feijiejie
+# data_path: "/disk/ssy/data/drr/pengu/all/"   #pengu
+# data_path: "/disk/ssy/data/drr/yixianyan/yixianyan_nii/"   #yixianyan
+
+
+
+output_dir : "./logs/${config.name}"  # the traning logs saved
+
+CT_MEAN_STD: [0., 1.]
+XRAY1_MEAN_STD: [0., 1.]
+XRAY2_MEAN_STD: [0., 1.0]
+XRAY1_MIN_MAX: [0, 255]
+XRAY2_MIN_MAX: [0, 255]
+CT_MIN_MAX: [0, 2500]
+fine_size: 128
+ct_channel: 128
+xray_channel: 1
+ 
+train_datasetfile: "./data/train.txt"
+val_datasetfile: "/disk/cdy/Xray-Diffusion/data/test.txt"
+
+  
+model:
+  base_learning_rate: 0.0001  #zhougu 0.00001 others: 0.0001
+  sync_dist: True
+  # params:
+  monitor: "val/rec_loss"
+  embed_dim: 4
+  lossconfig:
+    # target: ldm.modules.losses.LPIPSWithDiscriminator
+    # params:
+    disc_start: 10000
+    kl_weight: 1.0e-4
+    disc_weight: 0.5
+    highlow_weight: 0
+    high_limit: 0.04
+    low_limit: 0.04
+    disc_in_channels: 1
+    perceptual_weight: 0
+
+  ddconfig:
+    double_z: True
+    z_channels: 4
+    resolution: 128
+    in_channels: 1
+    out_ch: 1
+    ch: 32 # !
+    # ch: 16
+    ch_mult: [1,2,4,4]  # num_down = len(ch_mult)-1  #[1,2,2,2,4]  [1,2,4,4] # !
+    # ch_mult: [1,1,2,2]  # num_down = len(ch_mult)-1  #[1,2,2,2,4]  [1,2,4,4]
+    num_res_blocks: 2
+    attn_resolutions: []
+    dropout: 0.0
+
+trainer:
+  benchmark: True
+  # accumulate_grad_batches: 2
+  # devices: [1]
+  devices: [1]
+  accelerator: "auto"
+  max_epochs: 1000
+  fast_dev_run: False
+  # strategy: "ddp_find_unused_parameters_true"
