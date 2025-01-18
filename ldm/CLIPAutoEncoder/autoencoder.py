@@ -29,13 +29,25 @@ class CLIPAE(AutoencoderKL):
     def __init__(
         self,
         config,
-        freeze_first_stage=False,
     ):
         super().__init__(save_path=config.hydra_path, config=config, **config["model"])
 
+        self.cond_nums = config.cond_nums
+        self.cond_num = (1 in self.cond_nums) + (2 in self.cond_nums) + (3 in self.cond_nums)
+
+        self.cond1_order = list(config.cond1_order)
+        self.cond2_order = list(config.cond2_order)
+        self.cond3_order = list(config.cond3_order)
+
         # ! ---------------init cond_stage_model----------------
-        model = VisionTransformer(img_size=config.cond_size, patch_size=16, in_chans=1, embed_dim=8*16*16*16, num_heads=16, drop_rate=0.1, attn_drop_rate=0.1, drop_path_rate=0.1)
-        
+        model = VisionTransformer(img_size=config.cond_size, 
+                                  patch_size=16, 
+                                  in_c=self.cond_num, 
+                                  embed_dim=3*16*16, 
+                                  num_heads=12, 
+                                  drop_ratio=0.1, 
+                                  attn_drop_ratio=0.1, 
+                                  drop_path_ratio=0.1)
         self.cond_stage_model = model
         # ! ---------------init cond_stage_model----------------
     
@@ -46,44 +58,68 @@ class CLIPAE(AutoencoderKL):
         input: (1,1,256,256)
         output: (1,4,16,16,16) match the latent code z.
         """
-        # Note output shape is (1,8,16,16,16) not (1,4,16,16,16)
-        # Note channel is not controlled by config, it's fixed to 8
-        # ? fix: (1,1,256,256) -> (1,8,16,16,16)
-        
-        B, C, H, W = cond.shape
-        cond = cond.repeat(1, 1, 1, 1, H) 
+
         cond = self.cond_stage_model(cond)
+        return cond  # ? (1,4,16,16,16) match the latent code z.
+    def cond_repeat(self, cond):
+        """
+        Repeat the condition imgs to 5D tensor.
+        """
+        assert len(cond.shape) == 4, "condition imgs should be 4D tensor, but got {}".format(cond.shape)
+        B, C, H, W = cond.shape
+        cond = cond.unsqueeze(-1).repeat(1, 1, 1, 1, H) # ? (1,1,256,256) -> (1,1,256,256,256)
         return cond
+    def cossim(self, x, y):
+        """
+        Cosine similarity between x and y.
+        """
+        x = x.view(x.size(0), -1)
+        y = y.view(y.size(0), -1)
+        return F.cosine_similarity(x, y, dim=1)
+    def forward(self, input, sample_posterior=True):
+        posterior = self.encode(input)
+        if sample_posterior:
+            z = posterior.sample()
+        else:
+            z = posterior.mode()
+        dec = self.decode(z)
+        return dec, posterior, z
 
     def training_step(self, batch, batch_idx):
         opt_ae, opt_disc, opt_cond= self.optimizers()
 
         # ? ----------------get inputs----------------
 
-        inputs = batch["image"]
-        x = torch.as_tensor(batch["image"])
+        # ? get image
+        inputs = batch["image"] # ? (1, 1, 128, 128, 128)
+
+        # ? get condition imgs & repeat & permute & concat
         if 1 in self.cond_nums:
-            # cond1 = batch["cond1"].as_tensor()
             cond1 = torch.as_tensor(batch["cond1"])
+            cond1 = self.cond_repeat(cond1).permute(self.cond1_order)
         else:
             cond1 = None
         if 2 in self.cond_nums:
-            # cond2 = batch["cond2"].as_tensor()
             cond2 = torch.as_tensor(batch["cond2"])
+            cond2 = self.cond_repeat(cond2).permute(self.cond2_order)
         else:
             cond2 = None
         if 3 in self.cond_nums:
-            # cond3 = batch["cond3"].as_tensor()
             cond3 = torch.as_tensor(batch["cond3"])
+            cond3 = self.cond_repeat(cond3).permute(self.cond3_order)
         else:
             cond3 = None
-        # print(inputs.shape)
+        
+        cond = [cond1, cond2, cond3]
+        cond_cat = torch.cat(cond, dim=1) if self.cond_num != 0 else None # ? (1, 2, 256, 256, 256)
 
 
         # ? ----------------training----------------
-        reconstructions, posterior = self(inputs)
+        # TODO 原始结构有问题？
 
-        # train encoder+decoder+logvar
+        # train encoder+decoder+logvar+vit
+        reconstructions, posterior, z = self(inputs)
+
         aeloss, log_dict_ae = self.loss(
             inputs,
             reconstructions,
@@ -97,10 +133,20 @@ class CLIPAE(AutoencoderKL):
         self.manual_backward(aeloss)
         opt_ae.step()
 
-        self.log("aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
-        self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+        # train the vit
+        cond_latent = self.condition_vit_encode(cond_cat)
+        condloss = self.cossim(z, cond_latent)
+        opt_cond.zero_grad()
+        self.manual_backward(condloss)
+        opt_cond.step()
 
-        # train the discriminator
+        self.log("aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
+        self.log("condloss", condloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
+        self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False, sync_dist=self.sync_dist)
+
+        # train the discriminator+vit
+        reconstructions, posterior, z = self(inputs)
+
         discloss, log_dict_disc = self.loss(
             inputs,
             reconstructions,
@@ -114,7 +160,15 @@ class CLIPAE(AutoencoderKL):
         self.manual_backward(discloss)
         opt_disc.step()
 
+        # train the vit
+        cond_latent = self.condition_vit_encode(cond_cat)
+        condloss = self.cossim(z, cond_latent)
+        opt_cond.zero_grad()
+        self.manual_backward(condloss)
+        opt_cond.step()
+
         self.log("discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
+        self.log("condloss", condloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False, sync_dist=self.sync_dist)
 
     def validation_step(self, batch, batch_idx):
@@ -241,21 +295,22 @@ class CLIPAE(AutoencoderKL):
         return x
 
 
-@hydra.main(version_base=None, config_path="../../conf", config_name="/config/autoencoder.yaml")
+@hydra.main(version_base=None, config_path="../../conf", config_name="config")
 def main(config):
-    # config = config["config"]
+    config = config["config"]
     # model_config = config["model"]
     # ddconfig = config["model"]["params"]["ddconfig"]
     # lossconfig = config["model"]["params"]["lossconfig"]
     # print(model_config.get("params", dict()))
-    # model = AutoencoderKL(model_config)
-    input = torch.randn((1, 1, 256, 256))
+    model = CLIPAE(config=config)
+    input = torch.randn((1, 1, 128, 128, 128))
     # output, _ = model(input)
     # print(output.shape)
-    model = VisionTransformer(img_size=config.cond_size, patch_size=16, in_chans=1, embed_dim=8*16*16*16, num_heads=16, drop_rate=0.1, attn_drop_rate=0.1, drop_path_rate=0.1)
-
-    y = model(input)
-    print(y.shape)
+    # model = VisionTransformer(img_size=config.cond_size, patch_size=16, in_chans=1, embed_dim=8*16*16*16, num_heads=16, drop_rate=0.1, attn_drop_rate=0.1, drop_path_rate=0.1)
+    output1, output2 = model(input)
+    # y = model.condition_vit_encode(input)
+    print(output1.shape)
+    print(output2.shape)
 
 
 if __name__ == "__main__":

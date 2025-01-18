@@ -40,8 +40,8 @@ class VisionTransformer(nn.Module):
     def __init__(self, 
                  img_size=256, 
                  patch_size=16, 
-                 in_c=3, 
-                 embed_dim=16*16*16, 
+                 in_c=1, 
+                 embed_dim=3*16*16, 
                  depth=12, 
                  num_heads=12, 
                  mlp_ratio=4.0, 
@@ -73,7 +73,7 @@ class VisionTransformer(nn.Module):
         """
         super(VisionTransformer, self).__init__()
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
-        self.num_tokens = 1 # num_tokens = 1
+        self.num_tokens = 0 # num_tokens = 0 不使用class token
         self.patch_size = patch_size
         norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6) # 默认参数
         act_layer = act_layer or nn.GELU
@@ -96,7 +96,15 @@ class VisionTransformer(nn.Module):
         ])
         self.norm = norm_layer(embed_dim)
 
-        self.pre_logits = nn.Identity()
+        self.pre_logits = nn.Sequential(
+                nn.Conv3d(768, 512, kernel_size=1, stride=1, padding=0),
+                nn.ReLU(),
+                nn.Conv3d(512, 128, kernel_size=1, stride=1, padding=0),
+                nn.ReLU(),
+                nn.Conv3d(128, 64, kernel_size=1, stride=1, padding=0),
+                nn.ReLU(),
+                nn.Conv3d(64, 4, kernel_size=1, stride=1, padding=0),
+            )
         
 
         # Weight init
@@ -125,18 +133,16 @@ class VisionTransformer(nn.Module):
 
     def forward(self, x):
         # [B, C, H, W, D] -> [B, num_patches, embed_dim]
-        x = self.patch_embed(x)  # [B, 196, 768]
-        # [1, 1, 768] -> [B, 1, 768]
-        cls_token = self.cls_token.expand(x.shape[0], -1, -1) # 把cls_token复制batch_size份
-        x = torch.cat((cls_token, x), dim=1)  # [B, 197, 768]        
+        x = self.patch_embed(x)  # [B, 4096, 768]        
 
         x = self.pos_drop(x + self.pos_embed) 
         x = self.blocks(x)
         x = self.norm(x)
         
-        x = self.pre_logits(x[:, 0])
+        x = x.permute(0, 2, 1)  # [B, num_patches, embed_dim] -> [B, embed_dim, num_patches]
+        x = x.reshape(x.shape[0], x.shape[1], self.patch_size, self.patch_size, self.patch_size)
 
-        x = x.reshape(x.shape[0], self.embed_dim // self.patch_size ** 3, self.patch_size, self.patch_size, self.patch_size) # [B, 16, 16, 16]
+        x = self.pre_logits(x)
         
         return x
 
@@ -214,8 +220,8 @@ class Attention(nn.Module):
         # qkv(): -> [batch_size, num_patches + 1, 3 * total_embed_dim]
         # reshape: -> [batch_size, num_patches + 1, 3, num_heads, embed_dim_per_head]
         # permute: -> [3, batch_size, num_heads, num_patches + 1, embed_dim_per_head] 调整顺序
-        print("C:",C)
-        print("self.num_heads:",self.num_heads)
+        # //print("C:",C)
+        # //print("self.num_heads:",self.num_heads)
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         # [batch_size, num_heads, num_patches + 1, embed_dim_per_head]
         q, k, v = qkv[0], qkv[1], qkv[2]  # make torchscript happy (cannot use tensor as tuple)
@@ -235,9 +241,12 @@ class Attention(nn.Module):
         return x
 
 if __name__=='__main__':
-    model = VisionTransformer(img_size=256, patch_size=16, in_c=1, embed_dim=8*16*16*16, depth=12, num_heads=16, mlp_ratio=4.0)
-    model.to("cuda: 0")
-    input = torch.randn(1, 1, 256, 256, 256).to("cuda: 0")
+    print("load model")
+    model = VisionTransformer(img_size=256, patch_size=16, in_c=1, embed_dim=3*16*16, depth=12, num_heads=12, mlp_ratio=4.0)
+    print("load model success")
+    # model.to("cuda")
+    input = torch.randn(1, 1, 256, 256, 256)
+    # input = input.to("cuda")
     # input = torch.randn(1, 4096, 4096)
     # model = Attention(4096)
     output = model(input)

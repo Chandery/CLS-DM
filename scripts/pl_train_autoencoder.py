@@ -52,31 +52,11 @@ def train(config):
         num_workers=config.num_workers,
         batch_size=config.batch_size,
     )
-    # train_dl = prepare_dataset(
-    #     data_path=config.data_path, resize_size=config.resize_size, split="train"
-    # )
-    # val_dl = prepare_dataset(
-    #     data_path=config.data_path, resize_size=config.resize_size, split="val"
-    # )
-    # * dataset and dataloader
-    # ds = MhdDataset(config, split="train", mean=-464.24, std=558.47)
-    # dataloader = DataLoader(
-    #     dataset=ds,
-    #     shuffle=True,
-    #     pin_memory=True,
-    #     drop_last=True,
-    #     num_workers=config.num_workers,
-    #     batch_size=config.batch_size,
-    # )
-    # val_dataset = MhdDataset(config, split="val", mean=-464.24, std=558.47)
-    # val_dataloader = DataLoader(
-    #     dataset=val_dataset,
-    #     shuffle=False,
-    #     pin_memory=True,
-    #     drop_last=True,
-    #     num_workers=config.num_workers,
-    #     batch_size=config.batch_size,
-    # )
+    # n = next(iter(train_dl))
+    # print(n["image"].shape) # ? torch.Size([2, 1, 128, 128, 128])
+    # print(n["cond1"].shape) # ? torch.Size([1, 1, 256, 256])
+    # print(n["cond2"].shape) # ? torch.Size([1, 1, 256, 256])
+    # return
 
     # * model
     model = AutoencoderKL(save_path=config.hydra_path, config=config, **config["model"])
