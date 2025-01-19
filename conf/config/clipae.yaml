@@ -1,4 +1,4 @@
-name: 'autoencoderh5'
+name: 'clipae'
 #****** Data settings ******
 image_size: 128 # resize input images to this size
 cond_size: 256 # resize condition images to this size
@@ -34,8 +34,13 @@ cond1_order: [0,1,2,3,4]
 cond2_order: [0,1,4,3,2]
 cond3_order: [0,1,4,2,3]
 
-condloss_ratio: 1.0
+condloss_ratio: 100000.0  # aeloss的数量级是1e5
 
+cond_model_config:
+  patch_size: 16
+  embed_dim: 256
+  num_heads: 8
+  depth: 8
   
 model:
   base_learning_rate: 0.0001  #zhougu 0.00001 others: 0.0001
@@ -61,10 +66,10 @@ model:
     resolution: 128
     in_channels: 1
     out_ch: 1
-    ch: 32 # !
-    # ch: 16
-    ch_mult: [1,2,4,4]  # num_down = len(ch_mult)-1  #[1,2,2,2,4]  [1,2,4,4] # !
-    # ch_mult: [1,1,2,2]  # num_down = len(ch_mult)-1  #[1,2,2,2,4]  [1,2,4,4]
+    # ch: 32 # !
+    ch: 16
+    # ch_mult: [1,2,4,4]  # num_down = len(ch_mult)-1  #[1,2,2,2,4]  [1,2,4,4] # !
+    ch_mult: [1,1,2,4]  # num_down = len(ch_mult)-1  #[1,2,2,2,4]  [1,2,4,4]
     num_res_blocks: 2
     attn_resolutions: []
     dropout: 0.0
@@ -73,8 +78,8 @@ trainer:
   benchmark: True
   # accumulate_grad_batches: 2
   # devices: [1]
-  devices: [0, 1]
+  devices: [0,1]
   accelerator: "auto"
   max_epochs: 1000
   fast_dev_run: False
-  # strategy: "ddp_find_unused_parameters_true"
+  strategy: "ddp_find_unused_parameters_true"

@@ -67,7 +67,6 @@ def train(config):
         **config["trainer"],
         callbacks=[checkpoint_callback, checkpoint_callback_latest],
         default_root_dir=config.hydra_path,
-        # strategy=DDPStrategy(find_unused_parameters=True)
     )
     trainer.fit(model=model, train_dataloaders=train_dl, val_dataloaders=val_dl)
 

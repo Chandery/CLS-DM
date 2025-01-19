@@ -34,7 +34,7 @@ class VisionTransformer(nn.Module):
                  img_size=256, 
                  patch_size=16, 
                  in_c=1, 
-                 embed_dim=3*16*16, 
+                 embed_dim=16*16, 
                  depth=12, 
                  num_heads=12, 
                  mlp_ratio=4.0, 
@@ -88,13 +88,11 @@ class VisionTransformer(nn.Module):
         self.norm = norm_layer(embed_dim)
 
         self.pre_logits = nn.Sequential(
-                nn.Conv3d(768, 512, kernel_size=1, stride=1, padding=0),
+                nn.Conv3d(256, 64, kernel_size=1, stride=1, padding=0),
                 nn.ReLU(),
-                nn.Conv3d(512, 128, kernel_size=1, stride=1, padding=0),
+                nn.Conv3d(64, 32, kernel_size=1, stride=1, padding=0),
                 nn.ReLU(),
-                nn.Conv3d(128, 64, kernel_size=1, stride=1, padding=0),
-                nn.ReLU(),
-                nn.Conv3d(64, 4, kernel_size=1, stride=1, padding=0),
+                nn.Conv3d(32, 4, kernel_size=1, stride=1, padding=0),
             )
         
 
@@ -233,7 +231,7 @@ class Attention(nn.Module):
 
 if __name__=='__main__':
     print("load model")
-    model = VisionTransformer(img_size=256, patch_size=16, in_c=1, embed_dim=3*16*16, depth=12, num_heads=12, mlp_ratio=4.0)
+    model = VisionTransformer(img_size=256, patch_size=16, in_c=1, embed_dim=16*16, depth=12, num_heads=16, mlp_ratio=4.0)
     print("load model success")
     # model.to("cuda")
     input = torch.randn(1, 1, 256, 256, 256)

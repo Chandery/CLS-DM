@@ -41,13 +41,15 @@ class CLIPAE(AutoencoderKL):
 
         self.condloss_ratio = config.condloss_ratio
 
+        self.cond_config = config.cond_model_config
+
         # ! ---------------init cond_stage_model----------------
         model = VisionTransformer(img_size=config.cond_size, 
-                                  patch_size=16, 
+                                  patch_size=self.cond_config.patch_size, 
                                   in_c=self.cond_num, 
-                                  embed_dim=3*16*16, 
-                                  num_heads=12,
-                                  depth=12, 
+                                  embed_dim=self.cond_config.embed_dim, 
+                                  num_heads=self.cond_config.num_heads,
+                                  depth=self.cond_config.depth, 
                                   drop_ratio=0.1, 
                                   attn_drop_ratio=0.1, 
                                   drop_path_ratio=0.1)
@@ -141,20 +143,17 @@ class CLIPAE(AutoencoderKL):
         cliploss = aeloss + self.condloss_ratio * condloss # ? Key loss
 
         opt_ae.zero_grad()
-        self.manual_backward(cliploss)
-        opt_ae.step()
         opt_cond.zero_grad()
         self.manual_backward(cliploss)
+        opt_ae.step()
         opt_cond.step()
 
         self.log("aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log("condloss", condloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log("cliploss", cliploss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
-        self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False, sync_dist=self.sync_dist)
+        self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False)
 
-        # train the discriminator+vit
-        reconstructions, posterior, z = self(inputs)
-
+        # train the discriminator
         discloss, log_dict_disc = self.loss(
             inputs,
             reconstructions,
@@ -164,21 +163,18 @@ class CLIPAE(AutoencoderKL):
             last_layer=self.get_last_layer(),
             split="train",
         )
-        cond_latent = self.condition_vit_encode(cond_cat)
-        condloss = self.cossim(z, cond_latent)
+        # cond_latent = self.condition_vit_encode(cond_cat)
+        # condloss = self.cossim(z, cond_latent)
 
-        cliploss = discloss + self.condloss_ratio * condloss # ? Key loss
+        # cliploss = discloss + self.condloss_ratio * condloss # ? Key loss
 
         opt_disc.zero_grad()
-        self.manual_backward(cliploss)
+        self.manual_backward(discloss)
         opt_disc.step()
-        opt_cond.zero_grad()
-        self.manual_backward(cliploss)
-        opt_cond.step()
 
         self.log("discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log("condloss", condloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
-        self.log("cliploss", cliploss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
+        # self.log("cliploss", cliploss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False, sync_dist=self.sync_dist)
 
     def validation_step(self, batch, batch_idx):
