@@ -1,7 +1,6 @@
 name: 'clipae'
 #****** Data settings ******
 image_size: 128 # resize input images to this size
-cond_size: 256 # resize condition images to this size
 # pad_channel: 16
 resize_size: [128,128,128]
 # cond_path: "/nvme/Pancreas-Dataset/pancreas_diff/cond_data/"
@@ -29,6 +28,7 @@ xray_channel: 1
 train_datasetfile: "./data/train.txt"
 val_datasetfile: "/disk/cdy/Xray-Diffusion/data/test.txt"
 cond_nums: [1,2]   #[1,2,3]
+cond_size: 256 # resize condition images to this size
 
 cond1_order: [0,1,2,3,4]
 cond2_order: [0,1,4,3,2]
@@ -78,7 +78,7 @@ trainer:
   benchmark: True
   # accumulate_grad_batches: 2
   # devices: [1]
-  devices: [0,1]
+  devices: [0]
   accelerator: "auto"
   max_epochs: 1000
   fast_dev_run: False

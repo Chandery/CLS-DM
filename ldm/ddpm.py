@@ -1,10 +1,12 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import os
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__))))
 
 # import pytorch_lightning as pl
 import lightning as pl
-import os
 from torch.optim.lr_scheduler import LambdaLR
 from torchvision.models import resnet50
 from einops import rearrange, repeat
@@ -25,12 +27,13 @@ from .unet import UNetModel
 
 from .util import log_txt_as_img, exists, default, ismap, isimage, mean_flat, count_params, instantiate_from_config
 from .ema import LitEma
-from .autoencoderkl.distributions import normal_kl, DiagonalGaussianDistribution
-from .autoencoderkl.autoencoder import AutoencoderKL, VQModelInterface, IdentityFirstStage
+from autoencoderkl.distributions import normal_kl, DiagonalGaussianDistribution
+from autoencoderkl.autoencoder import AutoencoderKL, VQModelInterface, IdentityFirstStage
 from .ddpm_utils import make_beta_schedule, extract_into_tensor, noise_like
 from .ddim import DDIMSampler
 from .Medicalnet.Vit import load_weight_for_vit_encoder, vit_encoder_b
 from .condition_extractor import UnetEncoder
+from .CLIPAutoEncoder.autoencoder import CLIPAE
 
 
 __conditioning_keys__ = {"concat": "c_concat", "crossattn": "c_crossattn", "adm": "y"}
@@ -493,7 +496,7 @@ class LatentDiffusion(DDPM):
         self,
         config,
         first_stage_config,
-        cond_stage_config,
+        cond_stage_config=None,
         num_timesteps_cond=None,
         cond_stage_key="image",
         cond_stage_trainable=False,
@@ -509,6 +512,7 @@ class LatentDiffusion(DDPM):
     ):
         self.num_timesteps_cond = default(num_timesteps_cond, 1)
         self.scale_by_std = scale_by_std
+        self.config = config
         assert self.num_timesteps_cond <= kwargs["timesteps"]
         # for backwards compatibility after implementation of DiffusionWrapper
         if conditioning_key is None:
@@ -530,8 +534,9 @@ class LatentDiffusion(DDPM):
             self.scale_factor = scale_factor
         else:
             self.register_buffer("scale_factor", torch.tensor(scale_factor))
-        self.instantiate_first_stage(first_stage_config, config)  # * load autoencoderkl
-        self.instantiate_cond_stage(cond_stage_config)  # * load cond stage model
+        self.instantiate_first_stage_and_cond_stage(first_stage_config, self.config)  # * load clipae
+        # ! cond_stage_model has initialized in first_stage_model
+        # self.instantiate_cond_stage(cond_stage_config)  # * load cond stage model 
         self.cond_stage_forward = cond_stage_forward  # * false
         self.clip_denoised = False  # * false?
         self.bbox_tokenizer = None
@@ -593,6 +598,7 @@ class LatentDiffusion(DDPM):
             x = batch["image"]
             x = x.to(self.device)
             encoder_posterior = self.encode_first_stage(x)
+            # print(type(encoder_posterior))
             z = self.get_first_stage_encoding(encoder_posterior).detach()
             del self.scale_factor
             self.register_buffer("scale_factor", 1.0 / z.flatten().std())
@@ -608,17 +614,21 @@ class LatentDiffusion(DDPM):
         if self.shorten_cond_schedule:
             self.make_cond_schedule()
 
-    def instantiate_first_stage(self, config, global_config):
+    def instantiate_first_stage_and_cond_stage(self, config, global_config):
         # model = instantiate_from_config(config)
-        model = AutoencoderKL(config=global_config, **config)
+        # model = AutoencoderKL(config=global_config, **config)
+        model = CLIPAE(save_path=self.config.hydra_path,config=config)
         self.first_stage_model = model.eval()
         self.first_stage_model.train = disabled_train
-        # self.cond_stage_model = self.first_stage_model
-        # self.cond_stage_model = self.cond_stage_model.eval()
         for param in self.first_stage_model.parameters():
             param.requires_grad = False
 
+        # ? init cond_stage_model
+        self.cond_stage_model = self.first_stage_model.cond_stage_model # ? clip cond_stage_model
+
     def instantiate_cond_stage(self, config):
+        # ! useless
+
         if config.cond_type=="pretrained_vit":
             model = vit_encoder_b()
             model.fc = nn.Sequential(
@@ -651,26 +661,7 @@ class LatentDiffusion(DDPM):
         elif config.cond_type=="unet_encoder":
             model = UnetEncoder(in_channels=3)
 
-        self.cond_stage_model = model
-        # if not self.cond_stage_trainable:
-        #     if config == "__is_first_stage__":
-        #         print("Using first stage also as cond stage.")
-        #         self.cond_stage_model = self.first_stage_model
-        #     elif config == "__is_unconditional__":
-        #         print(f"Training {self.__class__.__name__} as an unconditional model.")
-        #         self.cond_stage_model = None
-        #         # self.be_unconditional = True
-        #     else:
-        #         model = instantiate_from_config(config)
-        #         self.cond_stage_model = model.eval()
-        #         self.cond_stage_model.train = disabled_train
-        #         for param in self.cond_stage_model.parameters():
-        #             param.requires_grad = False
-        # else:
-        #     assert config != "__is_first_stage__"
-        #     assert config != "__is_unconditional__"
-        #     model = instantiate_from_config(config)
-        #     self.cond_stage_model = model
+        # self.cond_stage_model = model  # ! useless
 
     def _get_denoise_row_from_list(self, samples, desc="", force_no_decoder_quantization=False):
         denoise_row = []
@@ -684,7 +675,10 @@ class LatentDiffusion(DDPM):
         return denoise_grid
 
     def get_first_stage_encoding(self, encoder_posterior):
+        # print(type(encoder_posterior))
+        # print(DiagonalGaussianDistribution)
         if isinstance(encoder_posterior, DiagonalGaussianDistribution):
+            # print("!!!!!fuck")
             z = encoder_posterior.sample()
         elif isinstance(encoder_posterior, torch.Tensor):
             z = encoder_posterior
@@ -709,11 +703,10 @@ class LatentDiffusion(DDPM):
         """
         using vit backbone to encode conditioning x-ray imgs.
         backbone checkpoint from https://github.com/duyhominhnguyen/LVM-Med
-        input: (1,1,256,256)
+        input: (1,2,256,256,256)
         output: (1,4,16,16,16) match the latent code z.
         """
         # * repeat second channel
-        cond = cond.repeat(1, 3, 1, 1)
         cond = self.cond_stage_model(cond)
         return cond
 
@@ -830,56 +823,42 @@ class LatentDiffusion(DDPM):
         # x, cond1, cond2 = batch["image"].as_tensor(), batch["cond1"].as_tensor(), batch["cond2"].as_tensor()
         # x = batch["image"].as_tensor() # ? monai
         x = torch.as_tensor(batch["image"])
-        if 1 in self.cond_nums:
-            # cond1 = batch["cond1"].as_tensor()
-            cond1 = torch.as_tensor(batch["cond1"])
-        else:
-            cond1 = None
-        if 2 in self.cond_nums:
-            # cond2 = batch["cond2"].as_tensor()
-            cond2 = torch.as_tensor(batch["cond2"])
-        else:
-            cond2 = None
-        if 3 in self.cond_nums:
-            # cond3 = batch["cond3"].as_tensor()
-            cond3 = torch.as_tensor(batch["cond3"])
-        else:
-            cond3 = None
 
+        cond_cat = self.first_stage_model.get_cond_cat(batch)
 
         if bs is not None:
             x = x[:bs]
         x = x.to(self.device)
         encoder_posterior = self.encode_first_stage(x)
         z = self.get_first_stage_encoding(encoder_posterior).detach()  # *  input image -> first stage -> sample -> z
-
-        cond = [cond1, cond2, cond3]
         
 
-        if self.high_low_mode:
-            high_c = self.highpass_torch(cond, limit=0.04)
-            high_c = self.get_learned_conditioning(high_c)
-            low_c = self.lowpass_torch(cond, limit=0.04)
-            low_c = self.get_learned_conditioning(low_c)
+        # if self.high_low_mode:
+        #     high_c = self.highpass_torch(cond, limit=0.04)
+        #     high_c = self.get_learned_conditioning(high_c)
+        #     low_c = self.lowpass_torch(cond, limit=0.04)
+        #     low_c = self.get_learned_conditioning(low_c)
 
-            c = self.get_learned_conditioning(cond)
-            c = torch.concat([c, high_c, low_c], dim=1)
-        else:
-            # c = self.get_learned_conditioning(cond)
-            cond_cat = []
-            if 1 in self.cond_nums:
-                cond1 = self.condition_vit_encode(cond1)
-                # print(cond1.shape) # 2,8,8,8,8
-                cond_cat.append(cond1)
-            if 2 in self.cond_nums:
-                cond2 = self.condition_vit_encode(cond2)
-                cond_cat.append(cond2)
-            if 3 in self.cond_nums:
-                cond3 = self.condition_vit_encode(cond3)
-                cond_cat.append(cond3)
+        #     c = self.get_learned_conditioning(cond)
+        #     c = torch.concat([c, high_c, low_c], dim=1)
+        # else:
+        #     # c = self.get_learned_conditioning(cond)
+        #     cond_cat = []
+        #     if 1 in self.cond_nums:
+        #         cond1 = self.condition_vit_encode(cond1)
+        #         # print(cond1.shape) # 2,8,8,8,8
+        #         cond_cat.append(cond1)
+        #     if 2 in self.cond_nums:
+        #         cond2 = self.condition_vit_encode(cond2)
+        #         cond_cat.append(cond2)
+        #     if 3 in self.cond_nums:
+        #         cond3 = self.condition_vit_encode(cond3)
+        #         cond_cat.append(cond3)
 
-            c = torch.cat(cond_cat, dim=1)
-            # print(c.shape) # 2,16,8,8,8
+        #     c = torch.cat(cond_cat, dim=1)
+        #     # print(c.shape) # 2,16,8,8,8
+
+        c = self.condition_vit_encode(cond_cat)
 
         out = [z, c]
         if return_first_stage_outputs:
@@ -887,7 +866,7 @@ class LatentDiffusion(DDPM):
             out.extend([x, xrec])
         if return_original_cond:
             # out.append(cond)
-            out.extend(cond)
+            out.extend(cond_cat)
         return out
 
     @torch.no_grad()
@@ -1049,6 +1028,7 @@ class LatentDiffusion(DDPM):
             else:
                 return self.first_stage_model.encode(x)
         else:
+            # print("!!!! to encode !!!!")
             return self.first_stage_model.encode(x)
 
     def shared_step(self, batch, **kwargs):

@@ -26,7 +26,7 @@ def train(config):
     checkpoint_callback = ModelCheckpoint(
         monitor=config["model"].monitor,
         dirpath=config.hydra_path,
-        filename="pl_train_autoencoder-epoch{epoch:02d}-val_rec_loss{val/rec_loss:.2f}",
+        filename="pl_train_autoencoder-epoch{epoch:02d}-val_rec_loss{val/cliploss:.2f}",
         save_top_k=1,
         mode="min",
         auto_insert_metric_name=False,
@@ -60,7 +60,7 @@ def train(config):
     # return
 
     # * model
-    model = CLIPAE(config=config)
+    model = CLIPAE(save_path=config.hydra_path, config=config)
 
     # * trainer fit
     trainer = pl.Trainer(

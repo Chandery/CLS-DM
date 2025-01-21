@@ -79,7 +79,7 @@ if __name__ == "__main__":
     # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/ldm/pl_test_ldm-2024-06-14/10-01-33"
     # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/c_vqgan_transformer/pl_test_transformer-2024-07-03/20-51-05"
     # data_path = "/disk/cc/Xray-Diffsuion/logs/ldm/pl_test_ldm-2024-11-13/23-43-21-zhougu"
-    data_path = "/disk/cdy/Xray-Diffusion/logs/ldm/pl_test_ldm-2025-01-09/12-02-17"
+    data_path = "/disk/cdy/SharedSpaceLDM/logs/clipae/pl_test_clipae-2025-01-21/14-25-32"
     psnr_record_pl = AverageMeter()
     ssim_record_pl = AverageMeter()
     mmd_record_pl = AverageMeter()
@@ -97,7 +97,10 @@ if __name__ == "__main__":
     # recon_mhd_list = sorted(Path(data_path).glob("*ae_rec*.nii.gz"))
     # recon_mhd_list = sorted(Path(data_path).glob("*[!_ae]_rec.nii.gz"))
     recon_mhd_list = sorted(Path(data_path).glob("*rec.nii.gz"))
-    recon_mhd_list = sorted(f for f in recon_mhd_list if "ae" not in f.stem)
+    recon_mhd_list_cond = sorted(f for f in recon_mhd_list if "cond" in f.stem)
+    recon_mhd_list_ae = sorted(f for f in recon_mhd_list if "ae" in f.stem)
+
+    recon_mhd_list = recon_mhd_list_ae  # ? ae or cond
 
 
     # whole_recon = []
@@ -138,6 +141,7 @@ if __name__ == "__main__":
     cos_record_pl = AverageMeter()
 
     for ori, recon in tqdm.tqdm(zip(ori_mhd_list, recon_mhd_list), total=len(ori_mhd_list)):
+        # print(ori, '\n',recon)
         ssim_value, mse_value, mae_value, psnr_value, cosine_similarity, mmd_value, mse0_value, mae0_value= calculate_metrics(ori, recon)
         print(ssim_value)
         ssim_record_pl.update(ssim_value)

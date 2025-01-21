@@ -28,9 +28,10 @@ class VQModelInterface:
 class CLIPAE(AutoencoderKL):
     def __init__(
         self,
+        save_path: str,
         config,
     ):
-        super().__init__(save_path=config.hydra_path, config=config, **config["model"])
+        super().__init__(save_path=save_path, config=config, **config["model"])
 
         self.cond_nums = config.cond_nums
         self.cond_num = (1 in self.cond_nums) + (2 in self.cond_nums) + (3 in self.cond_nums)
@@ -88,16 +89,7 @@ class CLIPAE(AutoencoderKL):
             z = posterior.mode()
         dec = self.decode(z)
         return dec, posterior, z
-
-    def training_step(self, batch, batch_idx):
-        opt_ae, opt_disc, opt_cond= self.optimizers()
-
-        # ? ----------------get inputs----------------
-
-        # ? get image
-        inputs = batch["image"] # ? (1, 1, 128, 128, 128)
-
-        # ? get condition imgs & repeat & permute & concat
+    def get_cond_cat(self, batch):
         cond = []
         if 1 in self.cond_nums:
             cond1 = torch.as_tensor(batch["cond1"])
@@ -119,6 +111,20 @@ class CLIPAE(AutoencoderKL):
             cond3 = None
 
         cond_cat = torch.cat(cond, dim=1) if self.cond_num != 0 else None # ? (1, 2, 256, 256, 256)
+
+        return cond_cat
+
+    def training_step(self, batch, batch_idx):
+        opt_ae, opt_disc, opt_cond= self.optimizers()
+
+        # ? ----------------get inputs----------------
+
+        # ? get image
+        inputs = batch["image"] # ? (1, 1, 128, 128, 128)
+
+        # ? get condition imgs & repeat & permute & concat
+
+        cond_cat = self.get_cond_cat(batch) # ? (1, 2, 256, 256, 256)
 
 
         # ? ----------------training----------------
@@ -208,7 +214,7 @@ class CLIPAE(AutoencoderKL):
             cond_latent = self.condition_vit_encode(cond_cat)
             condloss = self.cossim(z, cond_latent)
 
-            cliploss = rec_loss + self.condloss_ratio * condloss
+            cliploss = rec_loss + condloss
 
             # reconstructions = reconstructions.squeeze(0).permute(1, 0, 2, 3)
             # reconstructions = reconstructions.type(torch.uint8)
@@ -275,26 +281,38 @@ class CLIPAE(AutoencoderKL):
 
     def test_step(self, batch, batch_idx):
         inputs = batch["image"]
-        reconstructions, posterior = self(inputs)
+        cond = []
+        if 1 in self.cond_nums:
+            cond1 = torch.as_tensor(batch["cond1"])
+            cond1 = self.cond_repeat(cond1).permute(self.cond1_order)
+            cond.append(cond1)
+        else:
+            cond1 = None
+        if 2 in self.cond_nums:
+            cond2 = torch.as_tensor(batch["cond2"])
+            cond2 = self.cond_repeat(cond2).permute(self.cond2_order)
+            cond.append(cond2)
+        else:
+            cond2 = None
+        if 3 in self.cond_nums:
+            cond3 = torch.as_tensor(batch["cond3"])
+            cond3 = self.cond_repeat(cond3).permute(self.cond3_order)
+            cond.append(cond3)
+        else:
+            cond3 = None
+
+        cond_cat = torch.cat(cond, dim=1) if self.cond_num != 0 else None # ? (1, 2, 256, 256, 256)
+
+        reconstructions, _, z= self(inputs)
         # reconstructions = to_image(reconstructions)
         self.img_saver(inputs, post_fix="origin_x", filename=str(batch_idx)+"_origin_x")
         self.img_saver(reconstructions, post_fix="ae_rec", filename=str(batch_idx)+"_ae_rec")
 
-        # image = sitk.GetImageFromArray(reconstructions)
-        # sitk.WriteImage(image, os.path.join(self.save_path, f"reconstructions_{batch_idx}.mhd"))
+        cond_z = self.condition_vit_encode(cond_cat)
 
-        # inputs = to_image(inputs)
-        # image = sitk.GetImageFromArray(inputs)
-        # sitk.WriteImage(image, os.path.join(self.save_path, f"origin_{batch_idx}.mhd"))
-        # save_path = os.path.join(self.save_path, "val_reconstruction")
-        # os.makedirs(save_path, exist_ok=True)
-        # image = sitk.GetImageFromArray(reconstructions)
-        # sitk.WriteImage(image, os.path.join(save_path, f"{self.global_step}.mhd"))
-
-        # self.log("val/rec_loss", log_dict_ae["val/rec_loss"], sync_dist=self.sync_dist)
-        # self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False, sync_dist=self.sync_dist)
-        # self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False, sync_dist=self.sync_dist)
-        # return self.log_dic
+        cond_base_rec = self.decode(cond_z)
+        self.img_saver(cond_base_rec, post_fix="cond_base_rec", filename=str(batch_idx)+"_cond_base_rec")
+        
 
     def configure_optimizers(self):
         lr = self.learning_rate
@@ -329,21 +347,15 @@ def main(config):
     # ddconfig = config["model"]["params"]["ddconfig"]
     # lossconfig = config["model"]["params"]["lossconfig"]
     # print(model_config.get("params", dict()))
-    model = CLIPAE(config=config)
-    input = torch.randn((1, 1, 128, 128, 128))
-    # output, _ = model(input)
-    # print(output.shape)
-    # model = VisionTransformer(img_size=config.cond_size, patch_size=16, in_chans=1, embed_dim=8*16*16*16, num_heads=16, drop_rate=0.1, attn_drop_rate=0.1, drop_path_rate=0.1)
-    output1, _, output2 = model(input)
-    # y = model.condition_vit_encode(input)
-    print(output1.shape)
-    print(output2.shape)
+    model = CLIPAE(save_path=config.hydra_path,config=config)
+    
+    print(type(model.encoder))
 
 
 if __name__ == "__main__":
-    # main()
-    cos = nn.CosineSimilarity(dim=1)
-    input1 = torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.float)
-    input2 = torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.float)
-    output = cos(input1, input2)
-    print(output)
+    main()
+    # cos = nn.CosineSimilarity(dim=1)
+    # input1 = torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.float)
+    # input2 = torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.float)
+    # output = cos(input1, input2)
+    # print(output)
