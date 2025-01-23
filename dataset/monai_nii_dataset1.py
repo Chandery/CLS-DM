@@ -53,6 +53,7 @@ class AlignDataSet(Base_DataSet):
                     (ToTensor(), ToTensor(), ToTensor())
 
                     ])
+        self.data_augmentation_1 = List_Compose([(None,None,None)])
 
     @property
     def name(self):

@@ -69,6 +69,8 @@ latent_diffusion:
 
     condloss_ratio: 100000.0  # aeloss的数量级是1e5
 
+    cond_type: 'add' # 'add' or 'cat'
+
     cond_model_config:
       patch_size: 16
       embed_dim: 256
@@ -140,7 +142,7 @@ trainer:
   benchmark: True
   # accumulate_grad_batches: 2
   # devices: [0, 1]
-  devices: [0]
+  devices: [1]
   accelerator: "auto"
   max_epochs: 1000
   # strategy: "ddp_find_unused_parameters_true"

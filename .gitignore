@@ -10,6 +10,7 @@ draft.py
 test_npy
 wandb
 .neptune
+*.nii*
 
 
 # C extensions

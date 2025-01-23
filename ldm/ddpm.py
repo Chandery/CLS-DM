@@ -824,7 +824,23 @@ class LatentDiffusion(DDPM):
         # x = batch["image"].as_tensor() # ? monai
         x = torch.as_tensor(batch["image"])
 
-        cond_cat = self.first_stage_model.get_cond_cat(batch)
+        if return_original_cond:
+            cond = []
+            if 1 in self.cond_nums:
+                cond1 = torch.as_tensor(batch["cond1"])
+            else:
+                cond1 = None
+            if 2 in self.cond_nums:
+                cond2 = torch.as_tensor(batch["cond2"])
+            else:
+                cond2 = None
+            if 3 in self.cond_nums:
+                cond3 = torch.as_tensor(batch["cond3"])
+            else:
+                cond3 = None
+            cond = [cond1, cond2, cond3]
+        
+        cond_cat = self.first_stage_model.get_cond(batch, self.first_stage_model.cond_type)
 
         if bs is not None:
             x = x[:bs]
@@ -866,7 +882,7 @@ class LatentDiffusion(DDPM):
             out.extend([x, xrec])
         if return_original_cond:
             # out.append(cond)
-            out.extend(cond_cat)
+            out.extend(cond)
         return out
 
     @torch.no_grad()
@@ -1526,7 +1542,7 @@ class LatentDiffusion(DDPM):
                 loss_dict_ema = {key + "_ema": loss_dict_ema[key] for key in loss_dict_ema}
             self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
             self.log_dict(loss_dict_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
-            if self.current_epoch % 200 == 0 and batch_idx == 1:
+            if self.current_epoch % 100 == 0 and batch_idx == 1:
                 ddim_sampler = DDIMSampler(self)
                 shape = (self.batch_size, self.channels, self.image_size, self.image_size, self.image_size)
                 print(f"ddim shape :{shape}")
@@ -1534,6 +1550,7 @@ class LatentDiffusion(DDPM):
                 reconstructions = self.decode_first_stage(cond_z)
                 reconstructions = torch.clamp(reconstructions, min=-1, max=1)
                 reconstructions = (reconstructions + 1) * 127.5
+                rec = reconstructions
 
                 reconstructions = reconstructions.squeeze(0).permute(1, 0, 2, 3)
                 reconstructions = reconstructions.type(torch.uint8)
@@ -1544,10 +1561,14 @@ class LatentDiffusion(DDPM):
 
                 x = torch.clamp(x, min=-1, max=1)
                 x = (x + 1) * 127.5
+                gt = x
                 x = x.squeeze(0).permute(1, 0, 2, 3)
                 x = x.type(torch.uint8)
                 grid = make_grid(x)
                 self.logger.experiment.add_image("val_gt", grid, self.global_step)
+
+                from skimage.metrics import structural_similarity as ssim
+                self.log("val_ssim", ssim(rec, gt, data_range=gt.max()-gt.min()))
 
     def img_saver(self, img, post_fix, i_type=".nii", meta_data=None,filename=None, **kwargs):
         """
@@ -1629,8 +1650,8 @@ class LatentDiffusion(DDPM):
 
         ddim_sampler = DDIMSampler(self)
         shape = (self.batch_size, self.channels, self.image_size, self.image_size, self.image_size)
-        # cond_z = self.p_sample_loop(cond=c, shape=shape)
-        cond_z, _ = ddim_sampler.sample(50, batch_size=1, shape=shape, conditioning=c, verbose=False)
+        cond_z = self.p_sample_loop(cond=c, shape=shape)
+        # cond_z, _ = ddim_sampler.sample(50, batch_size=1, shape=shape, conditioning=c, verbose=False)
 
         reconstructions = self.decode_first_stage(cond_z)
 

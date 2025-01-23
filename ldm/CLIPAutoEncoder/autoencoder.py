@@ -43,11 +43,15 @@ class CLIPAE(AutoencoderKL):
         self.condloss_ratio = config.condloss_ratio
 
         self.cond_config = config.cond_model_config
+        
+        self.cond_type = config.cond_type
+
+        self.in_c =1 if self.cond_type=='add' else self.cond_num
 
         # ! ---------------init cond_stage_model----------------
         model = VisionTransformer(img_size=config.cond_size, 
                                   patch_size=self.cond_config.patch_size, 
-                                  in_c=self.cond_num, 
+                                  in_c=self.in_c, 
                                   embed_dim=self.cond_config.embed_dim, 
                                   num_heads=self.cond_config.num_heads,
                                   depth=self.cond_config.depth, 
@@ -89,7 +93,7 @@ class CLIPAE(AutoencoderKL):
             z = posterior.mode()
         dec = self.decode(z)
         return dec, posterior, z
-    def get_cond_cat(self, batch):
+    def get_cond(self, batch, type='add'):
         cond = []
         if 1 in self.cond_nums:
             cond1 = torch.as_tensor(batch["cond1"])
@@ -111,8 +115,21 @@ class CLIPAE(AutoencoderKL):
             cond3 = None
 
         cond_cat = torch.cat(cond, dim=1) if self.cond_num != 0 else None # ? (1, 2, 256, 256, 256)
+        cond_sum = cond1
+        if self.cond_num == 2:
+            cond_sum = cond1 + cond2
+        elif self.cond_num == 3:
+            cond_sum = cond1 + cond2 + cond3
+        
+        cond_avg = (cond_sum)/self.cond_num # ? (1, 1, 256, 256, 256)
 
-        return cond_cat
+        assert type=="add" or type=="cat", "cond type should be add or cat"
+
+        # print(type)
+        
+        cond_ret = cond_avg if type=="add" else cond_cat
+
+        return cond_ret
 
     def training_step(self, batch, batch_idx):
         opt_ae, opt_disc, opt_cond= self.optimizers()
@@ -124,7 +141,7 @@ class CLIPAE(AutoencoderKL):
 
         # ? get condition imgs & repeat & permute & concat
 
-        cond_cat = self.get_cond_cat(batch) # ? (1, 2, 256, 256, 256)
+        cond_cat = self.get_cond(batch, type=self.cond_type) # ? cat: (1, 2, 256, 256, 256), add: (1, 1, 256, 256, 256)
 
 
         # ? ----------------training----------------
@@ -206,7 +223,8 @@ class CLIPAE(AutoencoderKL):
             else:
                 cond3 = None
 
-            cond_cat = torch.cat(cond, dim=1) if self.cond_num != 0 else None # ? (1, 2, 256, 256, 256)
+            # cond_cat = torch.cat(cond, dim=1) if self.cond_num != 0 else None # ? (1, 2, 256, 256, 256)
+            cond_cat = self.get_cond(batch, self.cond_type)
             # print(inputs.shape)
             reconstructions, _, z= self(inputs)
             rec_loss = F.mse_loss(reconstructions, inputs)
