@@ -1,4 +1,4 @@
-name: 'autoencoderh5'
+name: 'autoencoder'
 #****** Data settings ******
 image_size: 128 # resize input images to this size
 cond_size: 256 # resize condition images to this size

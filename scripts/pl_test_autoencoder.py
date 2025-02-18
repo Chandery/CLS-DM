@@ -45,7 +45,7 @@ def train(config):
 
     # * model
     model = AutoencoderKL(save_path=config.hydra_path, config=config, **config["model"])
-    model.init_from_ckpt("/disk/cdy/Xray-Diffusion/logs/autoencoderh5/pl_train_autoencoder-2024-12-30/16-30-45/pl_train_autoencoder-epoch70-val_rec_loss0.01.ckpt"
+    model.init_from_ckpt("/disk/cdy/SharedSpaceLDM/logs/ldm-autoencoder-feijiejie-ckpt/pl_train_autoencoder-epoch130-val_rec_loss0.00.ckpt"
     )
 
     # * test model

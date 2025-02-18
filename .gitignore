@@ -11,6 +11,7 @@ test_npy
 wandb
 .neptune
 *.nii*
+*ckpt*
 
 
 # C extensions

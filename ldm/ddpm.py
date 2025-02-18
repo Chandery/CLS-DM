@@ -132,7 +132,7 @@ class DDPM(pl.LightningModule):
         assert parameterization in ["eps", "x0"], 'currently only supporting "eps" and "x0"'
         self.parameterization = parameterization
         print(f"{self.__class__.__name__}: Running in {self.parameterization}-prediction mode")
-        self.cond_stage_model = None
+        # self.cond_stage_model = None
         self.clip_denoised = clip_denoised
         self.log_every_t = log_every_t
         self.first_stage_key = first_stage_key
@@ -615,8 +615,6 @@ class LatentDiffusion(DDPM):
             self.make_cond_schedule()
 
     def instantiate_first_stage_and_cond_stage(self, config, global_config):
-        # model = instantiate_from_config(config)
-        # model = AutoencoderKL(config=global_config, **config)
         model = CLIPAE(save_path=self.config.hydra_path,config=config)
         self.first_stage_model = model.eval()
         self.first_stage_model.train = disabled_train
@@ -624,8 +622,13 @@ class LatentDiffusion(DDPM):
             param.requires_grad = False
 
         # ? init cond_stage_model
-        self.cond_stage_model = self.first_stage_model.cond_stage_model # ? clip cond_stage_model
-
+        # self.cond_stage_model = self.first_stage_model.cond_stage_model # ? clip cond_stage_model
+        # self.clipae_model = self.first_stage_model# ? clip 
+        # self.first_stage_model = self.first_stage_model.ae_model # ? clip ae_model
+    @property
+    def cond_stage_model(self):
+        return self.first_stage_model.cond_stage_model
+    
     def instantiate_cond_stage(self, config):
         # ! useless
 
@@ -1567,8 +1570,8 @@ class LatentDiffusion(DDPM):
                 grid = make_grid(x)
                 self.logger.experiment.add_image("val_gt", grid, self.global_step)
 
-                from skimage.metrics import structural_similarity as ssim
-                self.log("val_ssim", ssim(rec, gt, data_range=gt.max()-gt.min()))
+                # from skimage.metrics import structural_similarity as ssim
+                # self.log("val_ssim", ssim(rec, gt, data_range=gt.max()-gt.min()))
 
     def img_saver(self, img, post_fix, i_type=".nii", meta_data=None,filename=None, **kwargs):
         """
@@ -1624,6 +1627,15 @@ class LatentDiffusion(DDPM):
         grid = make_grid(img)
         self.logger.experiment.add_image(f"{figure_name}", grid, step)
 
+    def cossim(self, x, y):
+        """
+        Cosine similarity between x and y.
+        """
+        x = x.view(x.size(0), -1)
+        y = y.view(y.size(0), -1)
+        import torch.nn.functional as f
+        return f.cosine_similarity(x, y, dim=1)
+
     def test_step(self, batch, batch_idx):
         # meta_data = batch["image"].meta
         # # meta_data=None
@@ -1633,19 +1645,21 @@ class LatentDiffusion(DDPM):
         #     cond2_meta_data = batch["cond2"].meta
         # if 3 in self.cond_nums:
         #     cond3_meta_data = batch["cond3"].meta
+        filename = batch["filename"]
+        filename = filename[0]
 
         _, c, x, x_rec,cond1,cond2,cond3 = self.get_input(
             batch, self.first_stage_key, return_first_stage_outputs=True, return_original_cond=True
         )
         # self.tensorboard_save(x_rec, "rec", 0)    
-        self.img_saver(x, "origin_x", filename=str(self.root_path)+'/'+str(batch_idx)+"_origin_x")
-        self.img_saver(x_rec, "ae_rec", filename=str(self.root_path)+'/'+str(batch_idx)+"_ae_rec")
+        self.img_saver(x, "origin_x", filename=str(self.root_path)+'/'+str(filename)+"_origin_x")
+        self.img_saver(x_rec, "ae_rec", filename=str(self.root_path)+'/'+str(filename)+"_ae_rec")
         if 1 in self.cond_nums:
-            self.img_saver(cond1, "xray_0", i_type=".jpg", filename=str(self.root_path)+'/'+str(batch_idx)+"_xray_0")
+            self.img_saver(cond1, "xray_0", i_type=".jpg", filename=str(self.root_path)+'/'+str(filename)+"_xray_0")
         if 2 in self.cond_nums:
-            self.img_saver(cond2, "xray_1", i_type=".jpg", filename=str(self.root_path)+'/'+str(batch_idx)+"_xray_1")
+            self.img_saver(cond2, "xray_1", i_type=".jpg", filename=str(self.root_path)+'/'+str(filename)+"_xray_1")
         if 3 in self.cond_nums:
-            self.img_saver(cond3, "xray_2", i_type=".jpg", filename=str(self.root_path)+'/'+str(batch_idx)+"_xray_2")
+            self.img_saver(cond3, "xray_2", i_type=".jpg", filename=str(self.root_path)+'/'+str(filename)+"_xray_2")
             
 
         ddim_sampler = DDIMSampler(self)
@@ -1653,13 +1667,21 @@ class LatentDiffusion(DDPM):
         cond_z = self.p_sample_loop(cond=c, shape=shape)
         # cond_z, _ = ddim_sampler.sample(50, batch_size=1, shape=shape, conditioning=c, verbose=False)
 
+        z = self.encode_first_stage(x).sample()
+
+        cos_c = self.cossim(cond_z, c).item()
+        cos_z = self.cossim(cond_z, z).item()
+
+        print(f"cos cond_z with cond: {cos_c}")
+        print(f"cos cond_z with ae_z: {cos_z}")
+
         reconstructions = self.decode_first_stage(cond_z)
 
         # import nibabel as nib
 
         # nib_rec = nib.Nifti1Image(reconstructions[0, 0, ...].unsqueeze(-1).cpu().numpy(), np.eye(4))
         # nib.save(nib_rec, os.path.join(self.root_path, "nib_rec.nii.gz"))
-        self.img_saver(reconstructions, "rec", filename=str(self.root_path)+'/'+str(batch_idx)+"_rec")
+        self.img_saver(reconstructions, "rec", filename=str(self.root_path)+'/'+str(filename)+"_rec")
 
     def configure_optimizers(self):
         lr = self.learning_rate

@@ -45,9 +45,8 @@ def train(config):
     # model.init_from_ckpt(
     #     "/disk/cc/Xray-Diffsuion/logs/ldm/pl_train_ldm-2024-11-06/10-55-23-zhougu/latest.ckpt"
     # )
-    model.init_from_ckpt(
-        "/disk/cdy/SharedSpaceLDM/logs/ssldm/pl_train_ssldm-2025-01-21/15-54-36/pl_train_ssldm-epoch420-val_rec_loss0.00.ckpt"
-    )
+    ckpt = "/disk/cdy/SharedSpaceLDM/logs/ssldm/pl_train_ssldm-2025-01-28/18-36-15/pl_train_ssldm-epoch300-val_rec_loss0.00.ckpt"
+    model.init_from_ckpt(ckpt)
     # model.init_from_ckpt(
     #     "/disk/cc/Xray-Diffsuion/logs/ldm/pl_train_ldm-2024-11-04-pengu/02-21-15/pl_train_autoencoder-epoch1110-val_rec_loss0.00.ckpt"
     # )

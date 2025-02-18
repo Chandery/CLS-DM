@@ -95,11 +95,13 @@ class AlignDataSet(Base_DataSet):
         file_path = self.get_image_path(self.dir_root, self.dataset_paths[item])
         ct_data, x_ray1, x_ray2 = self.load_file(file_path)
 
+        # print(self.dataset_paths[item])
+
         # Data Augmentation
         ct, xray1, xray2 = self.data_augmentation([ct_data, x_ray1, x_ray2])
         ct = ct.unsqueeze(0)
 
-        tmp = {'image': ct, 'cond1': xray1, 'cond2': xray2}
+        tmp = {'image': ct, 'cond1': xray1, 'cond2': xray2, 'filename': self.dataset_paths[item]}
 
         return tmp
 

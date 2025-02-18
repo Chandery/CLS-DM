@@ -218,9 +218,12 @@ class AutoencoderKL(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         inputs = batch["image"]
         reconstructions, posterior = self(inputs)
+
+        filename = batch["filename"]
+        filename = filename[0]
         # reconstructions = to_image(reconstructions)
-        self.img_saver(inputs, post_fix="origin_x", filename=str(batch_idx)+"_origin_x")
-        self.img_saver(reconstructions, post_fix="ae_rec", filename=str(batch_idx)+"_ae_rec")
+        self.img_saver(inputs, post_fix="origin_x", filename=str(filename)+"_origin_x")
+        self.img_saver(reconstructions, post_fix="ae_rec", filename=str(filename)+"_ae_rec")
 
         # image = sitk.GetImageFromArray(reconstructions)
         # sitk.WriteImage(image, os.path.join(self.save_path, f"reconstructions_{batch_idx}.mhd"))

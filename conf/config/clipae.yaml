@@ -36,19 +36,24 @@ cond3_order: [0,1,4,2,3]
 
 condloss_ratio: 100000.0  # aeloss的数量级是1e5
 
+loss_ratio: 1.0
+
+# cond_type: 'add' # 'add' or 'cat'
 cond_type: 'add' # 'add' or 'cat'
 
 cond_model_config:
   patch_size: 16
   embed_dim: 256
   num_heads: 8
-  depth: 8
-  
+  depth: 16
+
+ae_ckpt: "/disk/cdy/SharedSpaceLDM/ckpt/autoencoder-feijiejie-ckpt/pl_train_autoencoder-epoch130-val_rec_loss0.00.ckpt"
+
 model:
   base_learning_rate: 0.0001  #zhougu 0.00001 others: 0.0001
   sync_dist: True
   # params:
-  monitor: "val/cliploss"
+  monitor: "val/cond_base_rec_loss"
   embed_dim: 4
   lossconfig:
     # target: ldm.modules.losses.LPIPSWithDiscriminator
@@ -68,10 +73,10 @@ model:
     resolution: 128
     in_channels: 1
     out_ch: 1
-    # ch: 32 # !
-    ch: 16
-    # ch_mult: [1,2,4,4]  # num_down = len(ch_mult)-1  #[1,2,2,2,4]  [1,2,4,4] # !
-    ch_mult: [1,1,2,4]  # num_down = len(ch_mult)-1  #[1,2,2,2,4]  [1,2,4,4]
+    ch: 32 # !
+    # ch: 16
+    ch_mult: [1,2,4,4]  # num_down = len(ch_mult)-1  #[1,2,2,2,4]  [1,2,4,4] # !
+    # ch_mult: [1,1,2,4]  # num_down = len(ch_mult)-1  #[1,2,2,2,4]  [1,2,4,4]
     num_res_blocks: 2
     attn_resolutions: []
     dropout: 0.0
@@ -80,7 +85,7 @@ trainer:
   benchmark: True
   # accumulate_grad_batches: 2
   # devices: [1]
-  devices: [1]
+  devices: [0,1]
   accelerator: "auto"
   max_epochs: 1000
   fast_dev_run: False

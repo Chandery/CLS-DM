@@ -24,7 +24,7 @@ def train(config):
     checkpoint_callback = ModelCheckpoint(
         monitor=config["latent_diffusion"].monitor,
         dirpath=config.hydra_path,
-        filename="pl_train_ssldm-epoch{epoch:02d}-val_rec_loss{val/rec_loss:.2f}",
+        filename="pl_train_ssldm-epoch{epoch:02d}-val_rec_loss{val/loss_ema:.3f}",
         save_top_k=1,
         mode="min",
         auto_insert_metric_name=False,

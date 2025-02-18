@@ -68,21 +68,28 @@ latent_diffusion:
     cond3_order: [0,1,4,2,3]
 
     condloss_ratio: 100000.0  # aeloss的数量级是1e5
+    
+    loss_ratio: 1.0
 
+    # cond_type: 'add' # 'add' or 'cat'
     cond_type: 'add' # 'add' or 'cat'
 
     cond_model_config:
       patch_size: 16
       embed_dim: 256
       num_heads: 8
-      depth: 8
+      depth: 16
+    
+    ae_ckpt: "/disk/cdy/SharedSpaceLDM/ckpt/autoencoder-feijiejie-ckpt/pl_train_autoencoder-epoch130-val_rec_loss0.00.ckpt"
+    clipae_ckpt: "/disk/cdy/SharedSpaceLDM/ckpt/clipae-feijiejie-ckpt/pl_train_autoencoder-epoch850-val_rec_loss0.00.ckpt"
+
     model:
       base_learning_rate: 0.0001
       sync_dist: True
       # params:
-      monitor: "val/rec_loss"
+      monitor: "val/loss_ema"
       # ckpt_path: "/disk/cc/Xray-Diffsuion/logs/autoencoder/pl_train_autoencoder-2024-10-28/16-40-35-zhougu/pl_train_autoencoder-epoch660-val_rec_loss0.00.ckpt"
-      ckpt_path: "/disk/cdy/SharedSpaceLDM/logs/clipae/pl_train_clipae-2025-01-19/23-21-38/pl_train_autoencoder-epoch300-val_rec_loss0.01.ckpt"
+      # ckpt_path: "/disk/cdy/SharedSpaceLDM/logs/clipae/pl_train_clipae-2025-01-19/23-21-38/pl_train_autoencoder-epoch300-val_rec_loss0.01.ckpt"
       # ckpt_path: "/disk/cc/Xray-Diffsuion/logs/autoencoder/pl_train_autoencoder-2024-09-25/10-47-33-pengu/pl_train_autoencoder-epoch290-val_rec_loss0.01.ckpt"
       embed_dim: 4
       ddconfig:
@@ -91,8 +98,8 @@ latent_diffusion:
         resolution: 128
         in_channels: 1
         out_ch: 1
-        ch: 16
-        ch_mult: [1,1,2,4]  # num_down = len(ch_mult)-1   #1 2 2 2 4
+        ch: 32
+        ch_mult: [1,2,4,4]  # num_down = len(ch_mult)-1   #1 2 2 2 4
         num_res_blocks: 2
         attn_resolutions: []
         dropout: 0.0
@@ -118,9 +125,9 @@ latent_diffusion:
     out_channels: 4
     model_channels: 192
     attention_resolutions: [1,2,4,8]
-    num_res_blocks: 2
+    num_res_blocks: 3
     channel_mult: [1,2,3,4]
-    num_heads: 8
+    num_heads: 16
     use_spatial_transformer: False
     use_scale_shift_norm: True
     resblock_updown: True
@@ -142,7 +149,8 @@ trainer:
   benchmark: True
   # accumulate_grad_batches: 2
   # devices: [0, 1]
-  devices: [1]
+  devices: [0]
+  # devices: [1]
   accelerator: "auto"
   max_epochs: 1000
   # strategy: "ddp_find_unused_parameters_true"

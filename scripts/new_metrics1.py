@@ -197,7 +197,7 @@ if __name__ == "__main__":
     # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/ldm/pl_test_ldm-2024-06-14/10-01-33"
     # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/c_vqgan_transformer/pl_test_transformer-2024-07-03/20-51-05"
     # data_path = "/disk/cc/Xray-Diffsuion/logs/ldm/pl_test_ldm-2024-11-13/23-43-21-zhougu"
-    data_path = "/disk/cdy/SharedSpaceLDM/logs/clipae/pl_test_clipae-2025-01-21/14-25-32"
+    data_path = "/disk/cdy/SharedSpaceLDM/logs/ssldm/pl_test_ssldm-2025-01-30/20-04-41"
     # psnr_record_pl = AverageMeter()
     # ssim_record_pl = AverageMeter()
     psnr_d_pl = AverageMeter()
@@ -230,7 +230,7 @@ if __name__ == "__main__":
     recon_mhd_list_ae = sorted(f for f in recon_mhd_list if "ae" in f.stem)
     recon_mhd_list_rec = sorted(f for f in recon_mhd_list if "rec" in f.stem and "ae" not in f.stem)
 
-    recon_mhd_list = recon_mhd_list_ae  # ? ae or cond or rec
+    recon_mhd_list = recon_mhd_list_rec  # ? ae or cond or rec
     
     mae_record_pl = AverageMeter()
     mse_record_pl = AverageMeter()
