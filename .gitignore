@@ -12,6 +12,7 @@ wandb
 .neptune
 *.nii*
 *ckpt*
+*log*
 
 
 # C extensions

@@ -3,13 +3,8 @@ name: 'ssldm'
 image_size: 128 # resize input images to this size
 # pad_channel: 16
 resize_size: [128,128,128]
-img_resize_size: [256,256] 
-# cond_path: "/disk/ssy/data/drr/result/split2/zhouguDR" 
-# data_path: "/disk/ssy/data/drr/zhougu/zhougunii"
-
-# cond_path: "/disk/ssy/data/drr/result/split/feijiejieDR/" 
-# cond_path: "/disk/ssy/data/drr/result/split2/feijiejieDR/"
-# data_path: "/disk/ssy/data/drr/feijiejie/all/"
+# img_resize_size: [256,256] 
+img_resize_size: [128,128] # ? X光的resize size改回128，这样才合理
 data_path: "/disk/cdy/LIDC-HDF5-256"   #feijiejie
 dataroot: "/disk/cdy/LIDC-HDF5-256"   #feijiejie
 CT_MEAN_STD: [0., 1.]
@@ -19,7 +14,8 @@ XRAY1_MIN_MAX: [0, 255]
 XRAY2_MIN_MAX: [0, 255]
 CT_MIN_MAX: [0, 2500]
 fine_size: 128
-fine_size_cond: 256
+# fine_size_cond: 256
+fine_size_cond: 128 # ? X光的resize size改回128，这样才合理
 ct_channel: 128
 xray_channel: 1
  
@@ -121,13 +117,14 @@ latent_diffusion:
     dims: 3
     image_size: 16
     #  in_channels: 28 # ? 3 conds + z
-    in_channels: 8 # ? cond1 + cond2 = 4, z = 4
+    # in_channels: 8 # ? cond1 + cond2 = 4, z = 4
+    in_channels: 20 # ? cond1 + cond2 = 16, z = 4
     out_channels: 4
     model_channels: 192
     attention_resolutions: [1,2,4,8]
-    num_res_blocks: 3
+    num_res_blocks: 2
     channel_mult: [1,2,3,4]
-    num_heads: 16
+    num_heads: 8
     use_spatial_transformer: False
     use_scale_shift_norm: True
     resblock_updown: True

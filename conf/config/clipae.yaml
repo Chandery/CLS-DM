@@ -21,7 +21,7 @@ XRAY1_MIN_MAX: [0, 255]
 XRAY2_MIN_MAX: [0, 255]
 CT_MIN_MAX: [0, 2500]
 fine_size: 128
-fine_size_cond: 256
+fine_size_cond: 128 # ? X光的resize size改回128，这样才合理
 ct_channel: 128
 xray_channel: 1
  
