@@ -71,8 +71,9 @@ trainer:
   benchmark: True
   # accumulate_grad_batches: 2
   # devices: [1]
-  devices: [1]
+  devices: [0]
   accelerator: "auto"
   max_epochs: 1000
   fast_dev_run: False
+  precision: "16-mixed"
   # strategy: "ddp_find_unused_parameters_true"

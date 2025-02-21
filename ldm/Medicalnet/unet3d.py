@@ -58,7 +58,7 @@ class UNet3D(nn.Module):
             nn.Conv3d(in_channels=features*2, out_channels=features // 2, kernel_size=1),
             nn.BatchNorm3d(num_features=features // 2),
             nn.ReLU(inplace=False),
-            nn.Conv3d(in_channels=features // 2, out_channels=features // 4, kernel_size=1),
+            nn.Conv3d(in_channels=features // 2, out_channels=16, kernel_size=1),
         )
 
 

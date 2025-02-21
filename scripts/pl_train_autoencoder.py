@@ -16,7 +16,7 @@ from dataset.monai_nii_dataset import prepare_dataset
 from dataset.monai_nii_dataset1 import AlignDataSet
 from lightning.pytorch.strategies import DDPStrategy
 
-torch.set_float32_matmul_precision("high")  
+# torch.set_float32_matmul_precision("high")  
 
 
 @hydra.main(config_path="../conf", config_name="config", version_base="1.3")
@@ -57,6 +57,11 @@ def train(config):
     # print(n["cond1"].shape) # ? torch.Size([1, 1, 256, 256])
     # print(n["cond2"].shape) # ? torch.Size([1, 1, 256, 256])
     # return
+
+    # ? test type
+    # for batch in train_dl:
+    #     images = batch["image"]
+    #     print(f"dtype: {images.dtype}")
 
     # * model
     model = AutoencoderKL(save_path=config.hydra_path, config=config, **config["model"])

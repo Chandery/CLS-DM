@@ -13,6 +13,7 @@ from .utils import *
 from .transform_3d import *
 import h5py
 import numpy as np
+import torch
 
 class AlignDataSet(Base_DataSet):
     '''
@@ -50,7 +51,8 @@ class AlignDataSet(Base_DataSet):
 
                     # (Get_Key_slice(opt.select_slice_num), None),
 
-                    (ToTensor(), ToTensor(), ToTensor())
+                    (ToTensor(), ToTensor(), ToTensor()),
+                    # (lambda x:x.to(dtype=torch.float16),lambda x:x.to(dtype=torch.float16),lambda x:x.to(dtype=torch.float16))
 
                     ])
         self.data_augmentation_1 = List_Compose([(None,None,None)])

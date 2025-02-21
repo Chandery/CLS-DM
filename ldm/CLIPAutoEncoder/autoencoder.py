@@ -44,7 +44,7 @@ class SpatialAligner(nn.Module):
         x, _ = self.attention(x, x, x)
         return x.permute(1,2,0).view(-1,4,16,16,16) 
     # def forward(self, x):
-    #     return checkpoint.checkpoint(self._forward, x)
+        # return checkpoint.checkpoint(self._forward, x)
 
 class CLIPAE(pl.LightningModule):
     def __init__(
@@ -167,7 +167,7 @@ class CLIPAE(pl.LightningModule):
         labels = torch.arange(z.size(0)).to(z.device)  # ? contrastive_loss 函数中使用了 checkpoint.checkpoint。当使用梯度检查点时，有时候会影响 Lightning 的自动设备管理
         return F.cross_entropy(logits, labels) + 0.5*recon_loss
     
-    def _forward(self, input, sample_posterior=True):
+    def forward(self, input, sample_posterior=True):
         posterior = self.ae_model.encode(input)
         if sample_posterior:
             z = posterior.sample()
@@ -176,8 +176,8 @@ class CLIPAE(pl.LightningModule):
         dec = self.ae_model.decode(z)
         return dec, posterior, z
     # ? 使用checkpoint.checkpoint，可以减少显存占用，但是速度会变慢
-    def forward(self, input, sample_posterior=True):
-        return checkpoint.checkpoint(self._forward, input, sample_posterior)
+    # def forward(self, input, sample_posterior=True):
+        # return checkpoint.checkpoint(self._forward, input, sample_posterior)
     
     def init_from_ckpt(self, path, ignore_keys=list()):
         sd = torch.load(path, map_location="cpu")["state_dict"]
