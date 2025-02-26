@@ -53,7 +53,7 @@ model:
   base_learning_rate: 0.0001  #zhougu 0.00001 others: 0.0001
   sync_dist: True
   # params:
-  monitor: "val/cond_base_rec_loss"
+  monitor: "val/cliploss"
   embed_dim: 4
   lossconfig:
     # target: ldm.modules.losses.LPIPSWithDiscriminator
@@ -90,4 +90,4 @@ trainer:
   max_epochs: 1000
   fast_dev_run: False
   # strategy: "ddp_find_unused_parameters_true"
-  precision: "16-mixed"
+  precision: "bf16-mixed"

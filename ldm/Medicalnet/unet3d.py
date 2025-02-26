@@ -111,7 +111,7 @@ class UNet3D(nn.Module):
                         ),
                     ),
                     (name + "norm1", nn.BatchNorm3d(num_features=features)),
-                    (name + "relu1", nn.ReLU(inplace=True)),
+                    (name + "relu1", nn.ReLU(inplace=False)),
                     (
                         name + "conv2",
                         nn.Conv3d(
@@ -123,7 +123,7 @@ class UNet3D(nn.Module):
                         ),
                     ),
                     (name + "norm2", nn.BatchNorm3d(num_features=features)),
-                    (name + "relu2", nn.ReLU(inplace=True)),
+                    (name + "relu2", nn.ReLU(inplace=False)),
                 ]
             )
         )

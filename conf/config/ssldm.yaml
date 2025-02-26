@@ -56,6 +56,7 @@ latent_diffusion:
   scale_by_std: True
   monitor: 'val/loss_simple_ema'
   first_stage_config:
+    fine_size_cond: 128 # ? X光的resize size改回128，这样才合理
     cond_nums: [1, 2]   #[1,2,3]
     cond_size: 256 # resize condition images to this size
 
@@ -77,7 +78,7 @@ latent_diffusion:
       depth: 16
     
     ae_ckpt: "/disk/cdy/SharedSpaceLDM/ckpt/autoencoder-feijiejie-ckpt/pl_train_autoencoder-epoch130-val_rec_loss0.00.ckpt"
-    clipae_ckpt: "/disk/cdy/SharedSpaceLDM/ckpt/clipae-feijiejie-ckpt/pl_train_autoencoder-epoch850-val_rec_loss0.00.ckpt"
+    clipae_ckpt: "/disk/cdy/SharedSpaceLDM/ckpt/clipae-simclr-LIDC-ckpt/pl_train_autoencoder-epoch390-val_rec_loss0.078.ckpt"
 
     model:
       base_learning_rate: 0.0001
@@ -150,6 +151,7 @@ trainer:
   # devices: [1]
   accelerator: "auto"
   max_epochs: 1000
+  # precision: "bf16-mixed"
   # strategy: "ddp_find_unused_parameters_true"
   # fast_dev_run: true
 

@@ -710,7 +710,7 @@ class LatentDiffusion(DDPM):
         output: (1,4,16,16,16) match the latent code z.
         """
         # * repeat second channel
-        cond = self.cond_stage_model(cond)
+        cond, cond_rec = self.cond_stage_model(cond)
         return cond
 
     def meshgrid(self, h, w):

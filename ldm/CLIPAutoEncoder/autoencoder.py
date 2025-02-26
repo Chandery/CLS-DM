@@ -258,6 +258,64 @@ class CLIPAE(pl.LightningModule):
         self.log("rec_loss", rec_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log("cliploss", cliploss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
 
+        # ! check model params
+        has_nan = self.check_model_params_detailed(self.cond_stage_model, "cond_stage_model")
+        if has_nan:
+            # 1. 记录当前的损失值
+            nan_info = {
+                "nan_detected/condloss": condloss.item() if not torch.isnan(condloss).all() else -1,
+                "nan_detected/rec_loss": rec_loss.item() if not torch.isnan(rec_loss).all() else -1,
+                "nan_detected/cliploss": cliploss.item() if not torch.isnan(cliploss).all() else -1,
+                
+                # 2. 记录当前的学习率
+                "nan_detected/learning_rate": self.learning_rate,
+                
+                # 3. 记录关键张量的统计信息
+                "nan_detected/z_stats/mean": z.mean().item() if not torch.isnan(z).all() else -1,
+                "nan_detected/z_stats/std": z.std().item() if not torch.isnan(z).all() else -1,
+                "nan_detected/z_stats/max": z.max().item() if not torch.isnan(z).all() else -1,
+                "nan_detected/z_stats/min": z.min().item() if not torch.isnan(z).all() else -1,
+                
+                "nan_detected/cond_latent_stats/mean": cond_latent.mean().item() if not torch.isnan(cond_latent).all() else -1,
+                "nan_detected/cond_latent_stats/std": cond_latent.std().item() if not torch.isnan(cond_latent).all() else -1,
+                
+                # 4. 记录训练状态
+                "nan_detected/epoch": self.current_epoch,
+                "nan_detected/global_step": self.global_step,
+                "nan_detected/batch_idx": batch_idx,
+                
+                # 5. 记录梯度信息
+                "nan_detected/grad_norm": torch.nn.utils.clip_grad_norm_(self.parameters(), float('inf')).item(),
+            }
+            
+            # 记录到日志
+            self.log_dict(nan_info, prog_bar=False, logger=True, sync_dist=self.sync_dist)
+            
+            # 可选：保存当前批次的输入数据，以便复现
+            self.save_debug_info(batch, "nan_detected_batch")
+            
+            # 可选：提前停止训练
+            raise RuntimeError("NaN detected in model parameters!")
+        
+    def save_debug_info(self, batch, prefix):
+        """保存调试信息到文件"""
+        debug_dir = os.path.join(self.root_path, "debug_info")
+        os.makedirs(debug_dir, exist_ok=True)
+        
+        # 保存输入数据
+        for key, value in batch.items():
+            if torch.is_tensor(value):
+                save_path = os.path.join(debug_dir, f"{prefix}_{key}.pt")
+                torch.save(value.cpu(), save_path)
+        
+        # 保存当前模型状态
+        model_path = os.path.join(debug_dir, f"{prefix}_model.pt")
+        torch.save({
+            'model_state_dict': self.state_dict(),
+            'epoch': self.current_epoch,
+            'global_step': self.global_step,
+        }, model_path)
+
     def validation_step(self, batch, batch_idx):
         if self.current_epoch % 10 == 0:
             inputs = batch["image"]
@@ -328,7 +386,51 @@ class CLIPAE(pl.LightningModule):
         )
         # saver(img, meta_data=meta_data)
         saver(img, filename=filename)
-
+    def check_tensor(self, tensor, name="tensor"):
+        print(f"\nChecking {name}:")
+        print(f"Shape: {tensor.shape}")
+        print(f"Has NaN: {torch.isnan(tensor).any()}")
+        print(f"Min: {tensor.min()}")
+        print(f"Max: {tensor.max()}")
+        print(f"Mean: {tensor.mean()}")
+        print(f"Std: {tensor.std()}")
+    def check_model_params_detailed(self, model, model_name="model"):
+        log_dict = {}
+        has_nan = False
+        
+        for name, param in model.named_parameters():
+            # 检查是否有 NaN
+            param_has_nan = torch.isnan(param).any().item()
+            has_nan = has_nan or param_has_nan
+            # 创建该参数的统计信息字典
+            param_stats = {
+                # f"{model_name}/{name}/shape": list(param.shape),
+                f"{model_name}/{name}/has_nan": torch.isnan(param).any().item(),
+                f"{model_name}/{name}/nan_count": torch.isnan(param).sum().item(),
+            }
+            
+            # 如果不是全是NaN才添加统计信息
+            if not torch.isnan(param).all():
+                param_stats.update({
+                    f"{model_name}/{name}/min": param.min().item(),
+                    f"{model_name}/{name}/max": param.max().item(),
+                    f"{model_name}/{name}/mean": param.mean().item(),
+                    f"{model_name}/{name}/std": param.std().item()
+                })
+            
+            log_dict.update(param_stats)
+        
+        # 使用 Lightning 的 log_dict 方法记录
+        self.log_dict(
+            log_dict,
+            prog_bar=False,  # 不在进度条显示
+            logger=True,     # 记录到 logger
+            # on_step=True,    # 每步记录
+            on_epoch=True,   # 每轮记录
+            sync_dist=self.sync_dist  # 分布式训练同步
+        )
+        return has_nan
+    
     def test_step(self, batch, batch_idx):
         inputs = batch["image"]
         filename = batch["filename"]
@@ -338,14 +440,35 @@ class CLIPAE(pl.LightningModule):
         cond_cat = self.get_cond(batch, self.cond_type)
 
         reconstructions, _, z= self(inputs)
+        
+        cond_latent, cond_rec = self.conditional_encode(cond_cat)
+        # self.check_model_params_detailed(self.cond_stage_model, "conditional_encode")
+        # self.check_model_params_detailed(self.proj_head, "proj_head")
+        # self.check_tensor(cond_latent,"cond_latent")
+        # print(cond_latent)
+
+        condloss= self.contrastive_loss(z, cond_latent, self.proj_head)
+        rec_loss = F.mse_loss(cond_rec, inputs)
+        cliploss = condloss + self.loss_ratio*rec_loss
+
+        print("!!!!!CLIPLoss:", cliploss)
+
+
+        cond_proj = self.proj_head(cond_latent)
+
+        cond_base_rec = self.ae_model.decode(cond_proj) 
+        # self.check_tensor(cond_base_rec, "cond_base_rec")
+        cond_base_rec_loss = F.mse_loss(cond_base_rec, inputs)
+        print("!!!!!COND_BASE_REC_Loss:", cond_base_rec_loss)
 
         self.img_saver(inputs, post_fix="origin_x", filename=str(filename)+"_origin_x")
         self.img_saver(reconstructions, post_fix="ae_rec", filename=str(filename)+"_ae_rec")
 
-        cond_z = self.condition_vit_encode(cond_cat)
+        # cond_z = self.condition_vit_encode(cond_cat)
 
-        cond_base_rec = self.ae_model.decode(cond_z)
+        # cond_base_rec = self.ae_model.decode(cond_z)
         self.img_saver(cond_base_rec, post_fix="cond_base_rec", filename=str(filename)+"_cond_base_rec")
+        self.img_saver(cond_rec, post_fix="cond_rec", filename=str(filename)+"_cond_rec")
         
 
     def configure_optimizers(self):
