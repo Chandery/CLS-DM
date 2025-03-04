@@ -676,6 +676,7 @@ class UNetModel(nn.Module):
                 conv_nd(dims, model_channels, n_embed, 1),
                 # nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
             )
+        self.convert_to_fp16()
 
     def convert_to_fp16(self):
         """

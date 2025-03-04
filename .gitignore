@@ -13,6 +13,7 @@ wandb
 *.nii*
 *ckpt*
 *log*
+.vscode
 
 
 # C extensions

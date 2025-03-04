@@ -412,7 +412,9 @@ class DDPM(pl.LightningModule):
         losses, _ = self.shared_step(batch)
         loss, loss_dict = losses
 
+        loss_dict.update({"current_lr": self.optimizers().param_groups[0]["lr"]})
         self.log_dict(loss_dict, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+        
 
         self.log("global_step", self.global_step, prog_bar=True, logger=True, on_step=True, on_epoch=False)
 
@@ -1555,7 +1557,7 @@ class LatentDiffusion(DDPM):
                 reconstructions = (reconstructions + 1) * 127.5
                 rec = reconstructions
 
-                reconstructions = reconstructions.squeeze(0).permute(1, 0, 2, 3)
+                reconstructions = reconstructions[0].permute(1, 0, 2, 3)
                 reconstructions = reconstructions.type(torch.uint8)
                 grid = make_grid(reconstructions)
                 self.logger.experiment.add_image("val_rec", grid, self.global_step)
@@ -1565,7 +1567,7 @@ class LatentDiffusion(DDPM):
                 x = torch.clamp(x, min=-1, max=1)
                 x = (x + 1) * 127.5
                 gt = x
-                x = x.squeeze(0).permute(1, 0, 2, 3)
+                x = x[0].permute(1, 0, 2, 3)
                 x = x.type(torch.uint8)
                 grid = make_grid(x)
                 self.logger.experiment.add_image("val_gt", grid, self.global_step)
@@ -1694,12 +1696,23 @@ class LatentDiffusion(DDPM):
             params.append(self.logvar)
         opt = torch.optim.AdamW(params, lr=lr)
         if self.use_scheduler:
-            # assert "target" in self.scheduler_config
-            # scheduler = instantiate_from_config(self.scheduler_config)
-            scheduler = LambdaLinearScheduler(**self.scheduler_config)
+            # scheduler = LambdaLinearScheduler(**self.scheduler_config)
+            from ldm.lr_scheduler import LambdaWarmUpCosineScheduler2
+            scheduler = LambdaWarmUpCosineScheduler2(**self.scheduler_config)
 
             print("Setting up LambdaLR scheduler...")
             scheduler = [{"scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule), "interval": "step", "frequency": 1}]
+            
+            # print("Setting up ReduceLROnPlateau scheduler...")
+            # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            #     opt,
+            #     mode='min',           # 监控指标是越小越好
+            #     factor=0.8,          # 学习率调整因子
+            #     patience=5,         # 容忍多少个epoch指标没改善
+            #     min_lr=1e-8          # 最小学习率
+            # )
+            # scheduler = [{"scheduler": scheduler, "interval": "epoch", "frequency": 1}]
+            # scheduler = [{"scheduler": scheduler, "monitor": "train/loss_simple_epoch"}]
             return [opt], scheduler
         return opt
 
@@ -1719,6 +1732,8 @@ class DiffusionWrapper(pl.LightningModule):
             # print(f"x shape :{x.shape}")
             # print(c_concat[0].shape)
             # print(f" shape :{x.shape}, {c_concat[0].shape}")
+            # print(f"x shape :{x.shape}")
+            # print(f"c_concat shape :{c_concat[0].shape}")
             xc = torch.cat([x] + c_concat, dim=1)
 
             out = self.diffusion_model(xc, t)

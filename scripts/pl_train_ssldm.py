@@ -1,18 +1,18 @@
 import hydra
 import torch
+torch.multiprocessing.set_sharing_strategy('file_system')
 from torch.utils.data import DataLoader
 import sys
 import os
 import lightning as pl
 from lightning.pytorch.callbacks import ModelCheckpoint
 
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from dataset.monai_nii_dataset import prepare_dataset
 
 # from ldm.autoencoderkl.autoencoder import AutoencoderKL
 from ldm.ddpm import LatentDiffusion
-from dataset.monai_nii_dataset1 import AlignDataSet
+from dataset.monai_nii_dataset1 import AlignDataSet,MultiEpochsDataLoader
 from lightning.pytorch.strategies import DDPStrategy
 
 torch.set_float32_matmul_precision("high")
@@ -34,7 +34,7 @@ def train(config):
         filename="latest",
     )
     train_ds = AlignDataSet(config,split = "train")
-    train_dl = DataLoader(
+    train_dl = MultiEpochsDataLoader(
         dataset=train_ds,
         shuffle=True,
         pin_memory=True,
@@ -43,7 +43,7 @@ def train(config):
         batch_size=config.batch_size,
     )
     val_ds = AlignDataSet(config, split = "val")
-    val_dl = DataLoader(
+    val_dl = MultiEpochsDataLoader(
         dataset=val_ds,
         shuffle=False,
         pin_memory=True,

@@ -76,9 +76,11 @@ class CLIPAE(pl.LightningModule):
         self.learning_rate = config.model.base_learning_rate
         self.root_path = save_path
         self.sync_dist = config.model.sync_dist
+        logvar_init = 0.0
+        self.logvar = nn.Parameter(torch.ones(size=()) * logvar_init)
 
         # ! ---------------init cond_stage_model----------------
-        model = UNet3D(in_channels=self.in_c, out_channels=1, init_features=64, use_checkpoint=False) # ? use_checkpoint=True，可以减少显存占用，但是速度会变慢
+        model = UNet3D(in_channels=self.in_c, out_channels=1, init_features=16, use_checkpoint=False) # ? use_checkpoint=True，可以减少显存占用，但是速度会变慢
         self.cond_stage_model = model
         self.proj_head = SpatialAligner(in_channels=16, out_channels=4)
         self.up_dim_head = nn.Sequential(
@@ -226,7 +228,12 @@ class CLIPAE(pl.LightningModule):
         cond_ret = cond_avg if type=="add" else cond_cat
 
         return cond_ret
-
+    def nll_loss(self, x, y):
+        rec_loss = torch.abs(x.contiguous() - y.contiguous())
+        nll_loss = rec_loss * torch.exp(self.logvar) + self.logvar
+        nll_loss = torch.sum(nll_loss) / nll_loss.shape[0]
+        return nll_loss
+    
     def training_step(self, batch, batch_idx):
         opt_cond= self.optimizers()
 
@@ -246,7 +253,7 @@ class CLIPAE(pl.LightningModule):
         cond_latent, cond_rec = self.conditional_encode(cond_cat)
 
         condloss= self.contrastive_loss(z, cond_latent, self.proj_head)
-        rec_loss = F.mse_loss(cond_rec, inputs)
+        rec_loss = self.nll_loss(cond_rec, inputs)
 
         cliploss = condloss + self.loss_ratio*rec_loss
 
@@ -482,8 +489,10 @@ class CLIPAE(pl.LightningModule):
         #     betas=(0.5, 0.9),
         # )
         # opt_disc = torch.optim.Adam(self.loss.discriminator.parameters(), lr=lr, betas=(0.5, 0.9))
+        from torch.optim.lr_scheduler import ReduceLROnPlateau
         opt_cond = torch.optim.Adam(self.cond_stage_model.parameters(), lr=lr, betas=(0.5, 0.9))
-        return opt_cond
+        scheduler = ReduceLROnPlateau(opt_cond, mode='min', factor=0.9, patience=10, verbose=True)
+        return [opt_cond], [{"scheduler": scheduler, "monitor": "train/cliploss"}]
 
     def get_last_layer(self):
         return self.ae_model.decoder.conv_out.weight
