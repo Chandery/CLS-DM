@@ -13,7 +13,7 @@ import lightning as pl
 from ldm.autoencoderkl.autoencoder import AutoencoderKL
 from lightning.pytorch.callbacks import ModelCheckpoint
 from dataset.monai_nii_dataset import prepare_dataset
-from dataset.monai_nii_dataset1 import AlignDataSet
+from dataset.monai_nii_dataset1 import AlignDataSet,MultiEpochsDataLoader
 from lightning.pytorch.strategies import DDPStrategy
 from ldm.CLIPAutoEncoder.autoencoder import CLIPAE
 
@@ -36,7 +36,7 @@ def train(config):
         filename="latest",
     )
     train_ds = AlignDataSet(config,split = "train")
-    train_dl = DataLoader(
+    train_dl = MultiEpochsDataLoader(
         dataset=train_ds,
         shuffle=True,
         pin_memory=True,
@@ -45,7 +45,7 @@ def train(config):
         batch_size=config.batch_size,
     )
     val_ds = AlignDataSet(config, split = "val")
-    val_dl = DataLoader(
+    val_dl = MultiEpochsDataLoader(
         dataset=val_ds,
         shuffle=False,
         pin_memory=True,

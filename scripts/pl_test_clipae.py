@@ -46,7 +46,7 @@ def train(config):
 
     # * model
     model = CLIPAE(save_path=config.hydra_path, config=config)
-    ckpt = "/disk/cdy/SharedSpaceLDM/logs/clipae/pl_train_clipae-2025-02-24/15-29-03/pl_train_autoencoder-epoch390-val_rec_loss0.078.ckpt"
+    ckpt = "/disk/cdy/SharedSpaceLDM/logs/clipae/pl_train_clipae-2025-03-09/21-47-11/debug_info/nan_detected_batch_model.pt"
     model.init_from_ckpt(ckpt)
 
     # * test model

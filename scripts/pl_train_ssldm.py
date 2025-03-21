@@ -21,12 +21,14 @@ torch.set_float32_matmul_precision("high")
 @hydra.main(config_path="../conf", config_name="config", version_base="1.3")
 def train(config):
     config = config["config"]
+    filename = "pl_train_ssldm-epoch{epoch:02d}" + f"-val_ssim{{{config['latent_diffusion'].monitor}:.3f}}"
+    print("checkpoint_callback based on :", filename)
     checkpoint_callback = ModelCheckpoint(
         monitor=config["latent_diffusion"].monitor,
         dirpath=config.hydra_path,
-        filename="pl_train_ssldm-epoch{epoch:02d}-val_rec_loss{val/loss_ema:.3f}",
+        filename=filename,
         save_top_k=1,
-        mode="min",
+        mode="max",
         auto_insert_metric_name=False,
     )
     checkpoint_callback_latest = ModelCheckpoint(

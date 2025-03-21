@@ -97,7 +97,7 @@ class DDPM(pl.LightningModule):
     def __init__(
         self,
         unet_config,
-        timesteps=1000,
+        timesteps=500, # ! 1000
         beta_schedule="linear",
         loss_type="l2",
         ckpt_path=None,
@@ -712,7 +712,7 @@ class LatentDiffusion(DDPM):
         output: (1,4,16,16,16) match the latent code z.
         """
         # * repeat second channel
-        cond, cond_rec = self.cond_stage_model(cond)
+        cond, cond_rec, _ = self.cond_stage_model(cond)
         return cond
 
     def meshgrid(self, h, w):
@@ -1058,7 +1058,7 @@ class LatentDiffusion(DDPM):
         return loss, c
 
     def forward(self, x, c, *args, **kwargs):
-        t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long()
+        t = torch.randint(0, self.num_timesteps, (x.shape[0],), device=self.device).long() # ? 一次有batch_size个t
         # if self.model.conditioning_key is not None:
         #     assert c is not None
         #     if self.cond_stage_trainable:
@@ -1538,42 +1538,48 @@ class LatentDiffusion(DDPM):
     def validation_step(self, batch, batch_idx):
         # _, loss_dict_no_ema, cond = self.shared_step(batch)
         if self.current_epoch % 10 == 0 and batch_idx == 1:
+            # val_losses, cond = self.shared_step(batch)
+            # _, loss_dict_no_ema = val_losses
+            # with self.ema_scope():
+            #     # _, loss_dict_ema = self.shared_step(batch)
+            #     val_losses, _ = self.shared_step(batch)
+            #     _, loss_dict_ema = val_losses
+            #     loss_dict_ema = {key + "_ema": loss_dict_ema[key] for key in loss_dict_ema}
+            # self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
+            # self.log_dict(loss_dict_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
+            # if self.current_epoch % 100 == 0 and batch_idx == 1:
             val_losses, cond = self.shared_step(batch)
-            _, loss_dict_no_ema = val_losses
-            with self.ema_scope():
-                # _, loss_dict_ema = self.shared_step(batch)
-                val_losses, _ = self.shared_step(batch)
-                _, loss_dict_ema = val_losses
-                loss_dict_ema = {key + "_ema": loss_dict_ema[key] for key in loss_dict_ema}
-            self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
-            self.log_dict(loss_dict_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
-            if self.current_epoch % 100 == 0 and batch_idx == 1:
-                ddim_sampler = DDIMSampler(self)
-                shape = (self.batch_size, self.channels, self.image_size, self.image_size, self.image_size)
-                print(f"ddim shape :{shape}")
-                cond_z, _ = ddim_sampler.sample(50, batch_size=self.batch_size, shape=shape, conditioning=cond, verbose=False)
-                reconstructions = self.decode_first_stage(cond_z)
-                reconstructions = torch.clamp(reconstructions, min=-1, max=1)
-                reconstructions = (reconstructions + 1) * 127.5
-                rec = reconstructions
+            ddim_sampler = DDIMSampler(self)
+            shape = (self.batch_size, self.channels, self.image_size, self.image_size, self.image_size)
+            print(f"ddim shape :{shape}")
+            cond_z, _ = ddim_sampler.sample(50, batch_size=self.batch_size, shape=shape, conditioning=cond, verbose=False)
+            reconstructions = self.decode_first_stage(cond_z)
+            reconstructions = torch.clamp(reconstructions, min=-1, max=1)
+            reconstructions = (reconstructions + 1) * 127.5
+            rec = reconstructions[0]
 
-                reconstructions = reconstructions[0].permute(1, 0, 2, 3)
-                reconstructions = reconstructions.type(torch.uint8)
-                grid = make_grid(reconstructions)
-                self.logger.experiment.add_image("val_rec", grid, self.global_step)
+            reconstructions = reconstructions[0].permute(1, 0, 2, 3)
+            reconstructions = reconstructions.type(torch.uint8)
+            grid = make_grid(reconstructions)
+            self.logger.experiment.add_image("val_rec", grid, self.global_step)
 
-                x = batch["image"]
+            x = batch["image"]
 
-                x = torch.clamp(x, min=-1, max=1)
-                x = (x + 1) * 127.5
-                gt = x
-                x = x[0].permute(1, 0, 2, 3)
-                x = x.type(torch.uint8)
-                grid = make_grid(x)
-                self.logger.experiment.add_image("val_gt", grid, self.global_step)
+            x = torch.clamp(x, min=-1, max=1)
+            x = (x + 1) * 127.5
+            gt = x[0]
+            x = x[0].permute(1, 0, 2, 3)
+            x = x.type(torch.uint8)
+            grid = make_grid(x)
+            self.logger.experiment.add_image("val_gt", grid, self.global_step)
 
-                # from skimage.metrics import structural_similarity as ssim
-                # self.log("val_ssim", ssim(rec, gt, data_range=gt.max()-gt.min()))
+            from scripts.new_metrics1 import Structural_Similarity
+            _, _, _, ssim_avg = Structural_Similarity(gt, rec, PIXEL_MAX=255)
+            self.log("val/ssim", ssim_avg)
+            print(f"current epoch {self.current_epoch} aims a validation step, ssim: {ssim_avg}")
+
+            # from skimage.metrics import structural_similarity as ssim
+            # self.log("val_ssim", ssim(rec, gt, data_range=gt.max()-gt.min()))
 
     def img_saver(self, img, post_fix, i_type=".nii", meta_data=None,filename=None, **kwargs):
         """
@@ -1697,11 +1703,11 @@ class LatentDiffusion(DDPM):
         opt = torch.optim.AdamW(params, lr=lr)
         if self.use_scheduler:
             # scheduler = LambdaLinearScheduler(**self.scheduler_config)
-            from ldm.lr_scheduler import LambdaWarmUpCosineScheduler2
-            scheduler = LambdaWarmUpCosineScheduler2(**self.scheduler_config)
+            # from ldm.lr_scheduler import LambdaWarmUpCosineScheduler2
+            # scheduler = LambdaWarmUpCosineScheduler2(**self.scheduler_config)
 
-            print("Setting up LambdaLR scheduler...")
-            scheduler = [{"scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule), "interval": "step", "frequency": 1}]
+            # print("Setting up LambdaLR scheduler...")
+            # scheduler = [{"scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule), "interval": "step", "frequency": 1}]
             
             # print("Setting up ReduceLROnPlateau scheduler...")
             # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -1713,6 +1719,9 @@ class LatentDiffusion(DDPM):
             # )
             # scheduler = [{"scheduler": scheduler, "interval": "epoch", "frequency": 1}]
             # scheduler = [{"scheduler": scheduler, "monitor": "train/loss_simple_epoch"}]
+            from torch.optim.lr_scheduler import StepLR
+            scheduler = StepLR(opt, step_size=self.scheduler_config["step_size"], gamma=self.scheduler_config["gamma"])
+            scheduler = {"scheduler": scheduler, "interval": self.scheduler_config["interval"], "frequency": 1}
             return [opt], scheduler
         return opt
 

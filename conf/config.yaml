@@ -10,7 +10,7 @@ hydra:
 config:
   num_workers: 8
   seed : False
-  batch_size: 5
+  batch_size: 2
   microbatch: -1
   ema_rate: "0.9999"
   log_interval: 10

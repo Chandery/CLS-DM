@@ -36,13 +36,14 @@ class SpatialAligner(nn.Module):
     def __init__(self, in_channels=16, out_channels=4):
         super().__init__()
         self.conv3d = nn.Conv3d(in_channels, out_channels, kernel_size=3, padding=1)
-        self.attention = nn.MultiheadAttention(embed_dim=out_channels, num_heads=4, batch_first=False) # ? batch_first=False，表示输入的格式为(seq, batch, feature)   
+        # self.attention = nn.MultiheadAttention(embed_dim=out_channels, num_heads=4, batch_first=False) # ? batch_first=False，表示输入的格式为(seq, batch, feature)   
     
     def forward(self, x):
         x = self.conv3d(x)  # 维度对齐
-        x = x.flatten(2).permute(2,0,1)  # [N,C,D,H,W] -> [D*H*W,N,C] # ? 为了符合MultiheadAttention的输入格式
-        x, _ = self.attention(x, x, x)
-        return x.permute(1,2,0).view(-1,4,16,16,16) 
+        # x = x.flatten(2).permute(2,0,1)  # [N,C,D,H,W] -> [D*H*W,N,C] # ? 为了符合MultiheadAttention的输入格式
+        # x, _ = self.attention(x, x, x)
+        # return x.permute(1,2,0).view(-1,4,16,16,16) 
+        return x
     # def forward(self, x):
         # return checkpoint.checkpoint(self._forward, x)
 
@@ -62,7 +63,7 @@ class CLIPAE(pl.LightningModule):
         self.cond2_order = list(config.cond2_order)
         self.cond3_order = list(config.cond3_order)
 
-        self.condloss_ratio = config.condloss_ratio
+        self.cond_loss_ratio = config.cond_loss_ratio
 
         self.cond_config = config.cond_model_config
         
@@ -70,7 +71,7 @@ class CLIPAE(pl.LightningModule):
 
         self.in_c =1 if self.cond_type=='add' else self.cond_num
 
-        self.loss_ratio = config.loss_ratio
+        self.nll_loss_ratio = config.nll_loss_ratio
         self.xray_size = config.fine_size_cond
 
         self.learning_rate = config.model.base_learning_rate
@@ -78,24 +79,27 @@ class CLIPAE(pl.LightningModule):
         self.sync_dist = config.model.sync_dist
         logvar_init = 0.0
         self.logvar = nn.Parameter(torch.ones(size=()) * logvar_init)
+        self.kl_loss_ratio = config.kl_loss_ratio
+        self.precision = config.trainer.precision
+        print("model precision is set to", self.precision)
 
         # ! ---------------init cond_stage_model----------------
-        model = UNet3D(in_channels=self.in_c, out_channels=1, init_features=16, use_checkpoint=False) # ? use_checkpoint=True，可以减少显存占用，但是速度会变慢
+        model = UNet3D(in_channels=self.in_c, out_channels=1, init_features=16, cond_channels=16, precision=self.precision, use_checkpoint=False) # ? use_checkpoint=True，可以减少显存占用，但是速度会变慢
         self.cond_stage_model = model
         self.proj_head = SpatialAligner(in_channels=16, out_channels=4)
         self.up_dim_head = nn.Sequential(
             # 首先在深度方向上扩展到self.xray_size
-            nn.ConvTranspose3d(in_channels=1, out_channels=8, kernel_size=(self.xray_size//4,1,1), stride=(self.xray_size//4,1,1), padding=(0,0,0)),
+            nn.ConvTranspose3d(in_channels=1, out_channels=4, kernel_size=(self.xray_size//4,3,3), stride=(self.xray_size//4,1,1), padding=(0,1,1)),
+            nn.BatchNorm3d(num_features=4),
+            nn.ReLU(inplace=False),
+            nn.ConvTranspose3d(in_channels=4, out_channels=8, kernel_size=(2,3,3), stride=(2,1,1), padding=(0,1,1)),
             nn.BatchNorm3d(num_features=8),
             nn.ReLU(inplace=False),
-            nn.ConvTranspose3d(in_channels=8, out_channels=16, kernel_size=(2,1,1), stride=(2,1,1), padding=(0,0,0)),
-            nn.BatchNorm3d(num_features=16),
-            nn.ReLU(inplace=False),
-            nn.ConvTranspose3d(in_channels=16, out_channels=16, kernel_size=(2,1,1), stride=(2,1,1), padding=(0,0,0)),
-            nn.BatchNorm3d(num_features=16),
+            nn.ConvTranspose3d(in_channels=8, out_channels=4, kernel_size=(2,3,3), stride=(2,1,1), padding=(0,1,1)),
+            nn.BatchNorm3d(num_features=4),
             nn.ReLU(inplace=False),
             # 然后在高度和宽度方向上使用1x1卷积学习特征
-            nn.Conv3d(in_channels=16, out_channels=1, kernel_size=1),
+            nn.Conv3d(in_channels=4, out_channels=1, kernel_size=1),
         )
         # ! ---------------init cond_stage_model----------------
 
@@ -146,8 +150,8 @@ class CLIPAE(pl.LightningModule):
             c_proj is the projected condition, which is used to contrast with the latent code z.
             cond is the condition, which is the real condition
         """
-        cond, cond_rec = self.cond_stage_model(cond) # ? (1,1,128,128) -> (1,16,16,16,16)
-        return cond, cond_rec  # ? (1,4,16,16,16) match the latent code z.
+        cond, cond_rec, posterior = self.cond_stage_model(cond) # ? (1,1,128,128) -> (1,16,16,16,16)
+        return cond, cond_rec, posterior # ? (1,4,16,16,16) match the latent code z.
     def cond_up_dim(self, cond):
         """
         Repeat the condition imgs to 5D tensor.
@@ -234,6 +238,11 @@ class CLIPAE(pl.LightningModule):
         nll_loss = torch.sum(nll_loss) / nll_loss.shape[0]
         return nll_loss
     
+    def kl_loss(self, posterior):
+        kl_loss = posterior.kl()
+        kl_loss = torch.sum(kl_loss) / kl_loss.shape[0]
+        return kl_loss
+    
     def training_step(self, batch, batch_idx):
         opt_cond= self.optimizers()
 
@@ -248,23 +257,29 @@ class CLIPAE(pl.LightningModule):
 
 
         # ? ----------------training----------------
-        reconstructions, posterior, z = self(inputs)
+        reconstructions, _, z = self(inputs)
 
-        cond_latent, cond_rec = self.conditional_encode(cond_cat)
+        cond_latent, cond_rec, cond_posterior= self.conditional_encode(cond_cat)
 
         condloss= self.contrastive_loss(z, cond_latent, self.proj_head)
         rec_loss = self.nll_loss(cond_rec, inputs)
+        kl_loss = self.kl_loss(cond_posterior)
 
-        cliploss = condloss + self.loss_ratio*rec_loss
+        # print(condloss, rec_loss, kl_loss)
+
+        cliploss = self.cond_loss_ratio * condloss + self.nll_loss_ratio * rec_loss + self.kl_loss_ratio * kl_loss
 
         opt_cond.zero_grad()
-        self.manual_backward(cliploss)
+        self.manual_backward(cliploss)      
+        # 添加梯度裁剪
+        # torch.nn.utils.clip_grad_norm_(self.cond_stage_model.parameters(), max_norm=1.0)
         opt_cond.step()
 
         self.log("condloss", condloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log("rec_loss", rec_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log("cliploss", cliploss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
-
+        self.log("kl_loss", kl_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
+        
         # ! check model params
         has_nan = self.check_model_params_detailed(self.cond_stage_model, "cond_stage_model")
         if has_nan:
@@ -318,7 +333,7 @@ class CLIPAE(pl.LightningModule):
         # 保存当前模型状态
         model_path = os.path.join(debug_dir, f"{prefix}_model.pt")
         torch.save({
-            'model_state_dict': self.state_dict(),
+            'state_dict': self.state_dict(),
             'epoch': self.current_epoch,
             'global_step': self.global_step,
         }, model_path)
@@ -331,11 +346,14 @@ class CLIPAE(pl.LightningModule):
             # print(inputs.shape)
             reconstructions, _, z= self(inputs)
         
-            cond_latent, cond_rec = self.conditional_encode(cond_cat)
+            cond_latent, cond_rec, cond_posterior = self.conditional_encode(cond_cat)
             condloss= self.contrastive_loss(z, cond_latent, self.proj_head)
-            rec_loss = F.mse_loss(cond_rec, inputs)
-            cliploss = condloss + self.loss_ratio*rec_loss
+            rec_loss = self.nll_loss(cond_rec, inputs)
+            kl_loss = self.kl_loss(cond_posterior)
 
+            # print(condloss.shape, rec_loss.shape, kl_loss.shape)
+            cliploss = self.cond_loss_ratio*condloss + self.nll_loss_ratio*rec_loss + self.kl_loss_ratio*kl_loss
+            # print(cliploss.shape)
             cond_proj = self.proj_head(cond_latent)
 
             cond_base_rec = self.ae_model.decode(cond_proj) 
@@ -345,6 +363,7 @@ class CLIPAE(pl.LightningModule):
             self.log("val/condloss", condloss, sync_dist=self.sync_dist)
             self.log("val/rec_loss", rec_loss, sync_dist=self.sync_dist)
             self.log("val/cond_base_rec_loss", cond_base_rec_loss, sync_dist=self.sync_dist)
+            self.log("val/kl_loss", kl_loss, sync_dist=self.sync_dist)  
 
     def img_saver(self, img, post_fix, i_type=".nii", meta_data=None, filename=None, **kwargs):
         """
@@ -402,10 +421,12 @@ class CLIPAE(pl.LightningModule):
         print(f"Mean: {tensor.mean()}")
         print(f"Std: {tensor.std()}")
     def check_model_params_detailed(self, model, model_name="model"):
+        # print("*"*10,f"Checking {model_name} parameters:", "*"*10)
         log_dict = {}
         has_nan = False
         
         for name, param in model.named_parameters():
+            # print(f"Checking {name} parameters:")
             # 检查是否有 NaN
             param_has_nan = torch.isnan(param).any().item()
             has_nan = has_nan or param_has_nan
@@ -436,6 +457,7 @@ class CLIPAE(pl.LightningModule):
             on_epoch=True,   # 每轮记录
             sync_dist=self.sync_dist  # 分布式训练同步
         )
+        # print(f"{model_name} has nan: {has_nan}")
         return has_nan
     
     def test_step(self, batch, batch_idx):
@@ -448,17 +470,18 @@ class CLIPAE(pl.LightningModule):
 
         reconstructions, _, z= self(inputs)
         
-        cond_latent, cond_rec = self.conditional_encode(cond_cat)
-        # self.check_model_params_detailed(self.cond_stage_model, "conditional_encode")
-        # self.check_model_params_detailed(self.proj_head, "proj_head")
-        # self.check_tensor(cond_latent,"cond_latent")
+        cond_latent, cond_rec, cond_posterior = self.conditional_encode(cond_cat)
+        self.check_model_params_detailed(self.cond_stage_model, "conditional_encode")
+        self.check_model_params_detailed(self.proj_head, "proj_head")
+        self.check_tensor(cond_latent,"cond_latent")
         # print(cond_latent)
 
         condloss= self.contrastive_loss(z, cond_latent, self.proj_head)
         rec_loss = F.mse_loss(cond_rec, inputs)
-        cliploss = condloss + self.loss_ratio*rec_loss
+        kl_loss = self.kl_loss(cond_posterior)
+        cliploss = condloss + self.nll_loss_ratio*rec_loss + self.kl_loss_ratio*kl_loss
 
-        print("!!!!!CLIPLoss:", cliploss)
+        # print("!!!!!CLIPLoss:", cliploss)
 
 
         cond_proj = self.proj_head(cond_latent)
@@ -466,7 +489,7 @@ class CLIPAE(pl.LightningModule):
         cond_base_rec = self.ae_model.decode(cond_proj) 
         # self.check_tensor(cond_base_rec, "cond_base_rec")
         cond_base_rec_loss = F.mse_loss(cond_base_rec, inputs)
-        print("!!!!!COND_BASE_REC_Loss:", cond_base_rec_loss)
+        # print("!!!!!COND_BASE_REC_Loss:", cond_base_rec_loss)
 
         self.img_saver(inputs, post_fix="origin_x", filename=str(filename)+"_origin_x")
         self.img_saver(reconstructions, post_fix="ae_rec", filename=str(filename)+"_ae_rec")

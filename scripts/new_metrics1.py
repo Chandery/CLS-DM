@@ -121,7 +121,11 @@ def Structural_Similarity(arr1, arr2, size_average=True, PIXEL_MAX=1.0):
     :return:
       Format-None if size_average else [N]
     """
-    assert (isinstance(arr1, np.ndarray)) and (isinstance(arr2, np.ndarray))
+    assert (len(arr1.shape)<=4) and (len(arr2.shape)<=4)
+    if not isinstance(arr1, np.ndarray):
+        arr1 = arr1.cpu().to(torch.float32).numpy()
+    if not isinstance(arr2, np.ndarray):
+        arr2 = arr2.cpu().to(torch.float32).numpy()
     if len(arr1.shape) == 3:
         arr1 = np.expand_dims(arr1, axis=0)
     if len(arr2.shape) == 3:
@@ -169,16 +173,16 @@ def calculate_metrics(file1, file2):
     data1 = load_nii(file1)
     data2 = load_nii(file2)
     
-    ssim_value_0, ssim_value_1, ssim_value_2, ssim_value_avg= Structural_Similarity(data1, data2, size_average=True, PIXEL_MAX=data2.max())
+    ssim_value_0, ssim_value_1, ssim_value_2, ssim_value_avg= Structural_Similarity(data1, data2, size_average=True, PIXEL_MAX=255)
     ssim_value = [ssim_value_0, ssim_value_1, ssim_value_2, ssim_value_avg]
-    ssim_value.append(SSIM(data1, data2, data_range=data2.max()))
+    ssim_value.append(SSIM(data1, data2, data_range=255))
 
     mse_value = mean_squared_error(data1, data2)
     mae_value = np.mean(np.abs(data1 - data2))
 
-    psnr_value_0, psnr_value_1, psnr_value_2, psnr_value_avg = Peak_Signal_to_Noise_Rate(data1, data2, size_average=True, PIXEL_MAX=data2.max())
+    psnr_value_0, psnr_value_1, psnr_value_2, psnr_value_avg = Peak_Signal_to_Noise_Rate(data1, data2, size_average=True, PIXEL_MAX=255)
     psnr_value = [psnr_value_0, psnr_value_1, psnr_value_2, psnr_value_avg]
-    psnr_value.append(psnr(data1, data2, data_range=data2.max()))
+    psnr_value.append(psnr(data1, data2, data_range=255))
 
     cosine_similarity = 1 - cosine(data1.flatten(), data2.flatten())
     mmd_value = calculate_mmd(data1, data2)
@@ -197,7 +201,7 @@ if __name__ == "__main__":
     # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/ldm/pl_test_ldm-2024-06-14/10-01-33"
     # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/c_vqgan_transformer/pl_test_transformer-2024-07-03/20-51-05"
     # data_path = "/disk/cc/Xray-Diffsuion/logs/ldm/pl_test_ldm-2024-11-13/23-43-21-zhougu"
-    data_path = "/disk/cdy/SharedSpaceLDM/logs/clipae/pl_test_clipae-2025-02-26/07-54-35"
+    data_path = "/disk/cdy/SharedSpaceLDM/logs/ssldm/pl_test_ssldm-2025-01-30/20-04-41"
     # psnr_record_pl = AverageMeter()
     # ssim_record_pl = AverageMeter()
     psnr_d_pl = AverageMeter()
@@ -231,7 +235,7 @@ if __name__ == "__main__":
     recon_mhd_list_ae = sorted(f for f in recon_mhd_list if "ae" in f.stem)
     recon_mhd_list_rec = sorted(f for f in recon_mhd_list if "rec" in f.stem and "ae" not in f.stem)
 
-    recon_mhd_list = recon_mhd_list_cond  # ? ae or cond or rec
+    recon_mhd_list = recon_mhd_list_rec  # ? ae or cond or rec
     
     mae_record_pl = AverageMeter()
     mse_record_pl = AverageMeter()

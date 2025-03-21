@@ -32,7 +32,7 @@ output_dir : "./logs/${config.name}"  # the traning logs saved
 latent_diffusion:
   # ckpt: True
   # ckpt_path: "/disk/cc/Xray-Diffsuion/logs/ldm/pl_train_ldm-2024-11-08/21-50-19/pl_train_autoencoder-epoch870-val_rec_loss0.00.ckpt"
-  base_learning_rate: 3e-5
+  base_learning_rate: 5.e-5
   linear_start: 0.0015
   linear_end: 0.0155
   num_timesteps_cond: 1
@@ -42,7 +42,7 @@ latent_diffusion:
 
 
   log_every_t: 200
-  timesteps: 1000
+  timesteps: 1000 # ! default 1000
   loss_type: l1
 
   first_stage_key: "image"
@@ -54,7 +54,7 @@ latent_diffusion:
   cond_stage_trainable: False
   concat_mode: True
   scale_by_std: True
-  monitor: 'val/loss_simple_ema'
+  monitor: 'val/ssim'
   first_stage_config:
     fine_size_cond: 128 # ? X光的resize size改回128，这样才合理
     cond_nums: [1, 2]   #[1,2,3]
@@ -64,9 +64,12 @@ latent_diffusion:
     cond2_order: [0,1,4,3,2]
     cond3_order: [0,1,4,2,3]
 
-    condloss_ratio: 100000.0  # aeloss的数量级是1e5
-    
-    loss_ratio: 1.0
+    cond_loss_ratio: 1.e4
+    nll_loss_ratio: 1.0
+    kl_loss_ratio: 1.e-2
+
+    trainer:
+      precision: "32"
 
     # cond_type: 'add' # 'add' or 'cat'
     cond_type: 'add' # 'add' or 'cat'
@@ -78,7 +81,7 @@ latent_diffusion:
       depth: 16
     
     ae_ckpt: "/disk/cdy/SharedSpaceLDM/ckpt/autoencoder-feijiejie-ckpt/pl_train_autoencoder-epoch130-val_rec_loss0.00.ckpt"
-    clipae_ckpt: "/disk/cdy/SharedSpaceLDM/ckpt/clipae-simclr-LIDC-ckpt/pl_train_autoencoder-epoch390-val_rec_loss0.078.ckpt"
+    clipae_ckpt: "/disk/cdy/SharedSpaceLDM/logs/clipae/pl_train_clipae-2025-03-10/13-46-05/pl_train_autoencoder-epoch280-val_rec_loss213702.016.ckpt"
 
     model:
       base_learning_rate: 0.0001
@@ -122,7 +125,8 @@ latent_diffusion:
     in_channels: 20 # ? cond1 + cond2 = 16, z = 4
     out_channels: 4
     model_channels: 192
-    attention_resolutions: []
+    attention_resolutions: [1,2,4,8]
+    # attention_resolutions: []
     num_res_blocks: 2
     channel_mult: [1,2,3,4]
     num_heads: 8
@@ -137,19 +141,20 @@ latent_diffusion:
     legacy: False
 
   scheduler_config:
-    warm_up_steps: [1000]
-    cycle_lengths: [1830000]
-    f_start: [1.e-2]
-    f_max: [1.]
-    f_min: [1.e-4]
-    verbosity_interval: 100
-    # step_size: 20
-    # gamma: 0.8
+    # warm_up_steps: [10000]
+    # cycle_lengths: [18300000000]
+    # f_start: [1.e-6]
+    # f_max: [1.]
+    # f_min: [1.e-6]
+    # verbosity_interval: 100
+    interval: "epoch"
+    step_size: 200
+    gamma: 0.8
 
 
 trainer:
   benchmark: True
-  # accumulate_grad_batches: 2
+  accumulate_grad_batches: 4
   # devices: [0, 1]
   devices: [0]
   # devices: [1]
