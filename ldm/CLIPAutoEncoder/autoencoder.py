@@ -86,7 +86,7 @@ class CLIPAE(pl.LightningModule):
         # ! ---------------init cond_stage_model----------------
         model = UNet3D(in_channels=self.in_c, out_channels=1, init_features=16, cond_channels=16, precision=self.precision, use_checkpoint=False) # ? use_checkpoint=True，可以减少显存占用，但是速度会变慢
         self.cond_stage_model = model
-        self.proj_head = SpatialAligner(in_channels=16, out_channels=4)
+        self.proj_head = SpatialAligner(in_channels=128, out_channels=4)
         self.up_dim_head = nn.Sequential(
             # 首先在深度方向上扩展到self.xray_size
             nn.ConvTranspose3d(in_channels=1, out_channels=4, kernel_size=(self.xray_size//4,3,3), stride=(self.xray_size//4,1,1), padding=(0,1,1)),
@@ -150,8 +150,8 @@ class CLIPAE(pl.LightningModule):
             c_proj is the projected condition, which is used to contrast with the latent code z.
             cond is the condition, which is the real condition
         """
-        cond, cond_rec, posterior = self.cond_stage_model(cond) # ? (1,1,128,128) -> (1,16,16,16,16)
-        return cond, cond_rec, posterior # ? (1,4,16,16,16) match the latent code z.
+        cond, cond_rec = self.cond_stage_model(cond) # ? (1,1,128,128) -> (1,16,16,16,16)
+        return cond, cond_rec # ? (1,4,16,16,16) match the latent code z.
     def cond_up_dim(self, cond):
         """
         Repeat the condition imgs to 5D tensor.
@@ -259,15 +259,15 @@ class CLIPAE(pl.LightningModule):
         # ? ----------------training----------------
         reconstructions, _, z = self(inputs)
 
-        cond_latent, cond_rec, cond_posterior= self.conditional_encode(cond_cat)
+        cond_latent, cond_rec= self.conditional_encode(cond_cat)
 
         condloss= self.contrastive_loss(z, cond_latent, self.proj_head)
         rec_loss = self.nll_loss(cond_rec, inputs)
-        kl_loss = self.kl_loss(cond_posterior)
+        # kl_loss = self.kl_loss(cond_posterior)
 
         # print(condloss, rec_loss, kl_loss)
 
-        cliploss = self.cond_loss_ratio * condloss + self.nll_loss_ratio * rec_loss + self.kl_loss_ratio * kl_loss
+        cliploss = self.cond_loss_ratio * condloss + self.nll_loss_ratio * rec_loss # + self.kl_loss_ratio * kl_loss
 
         opt_cond.zero_grad()
         self.manual_backward(cliploss)      
@@ -278,7 +278,7 @@ class CLIPAE(pl.LightningModule):
         self.log("condloss", condloss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log("rec_loss", rec_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         self.log("cliploss", cliploss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
-        self.log("kl_loss", kl_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
+        # self.log("kl_loss", kl_loss, prog_bar=True, logger=True, on_step=True, on_epoch=True, sync_dist=self.sync_dist)
         
         # ! check model params
         has_nan = self.check_model_params_detailed(self.cond_stage_model, "cond_stage_model")
@@ -339,20 +339,20 @@ class CLIPAE(pl.LightningModule):
         }, model_path)
 
     def validation_step(self, batch, batch_idx):
-        if self.current_epoch % 10 == 0:
+        # if self.current_epoch % 10 == 0:
             inputs = batch["image"]
     
             cond_cat = self.get_cond(batch, self.cond_type)
             # print(inputs.shape)
             reconstructions, _, z= self(inputs)
         
-            cond_latent, cond_rec, cond_posterior = self.conditional_encode(cond_cat)
+            cond_latent, cond_rec= self.conditional_encode(cond_cat)
             condloss= self.contrastive_loss(z, cond_latent, self.proj_head)
             rec_loss = self.nll_loss(cond_rec, inputs)
-            kl_loss = self.kl_loss(cond_posterior)
+            # kl_loss = self.kl_loss(cond_posterior)
 
             # print(condloss.shape, rec_loss.shape, kl_loss.shape)
-            cliploss = self.cond_loss_ratio*condloss + self.nll_loss_ratio*rec_loss + self.kl_loss_ratio*kl_loss
+            cliploss = self.cond_loss_ratio*condloss + self.nll_loss_ratio*rec_loss # + self.kl_loss_ratio*kl_loss
             # print(cliploss.shape)
             cond_proj = self.proj_head(cond_latent)
 
@@ -363,7 +363,7 @@ class CLIPAE(pl.LightningModule):
             self.log("val/condloss", condloss, sync_dist=self.sync_dist)
             self.log("val/rec_loss", rec_loss, sync_dist=self.sync_dist)
             self.log("val/cond_base_rec_loss", cond_base_rec_loss, sync_dist=self.sync_dist)
-            self.log("val/kl_loss", kl_loss, sync_dist=self.sync_dist)  
+            # self.log("val/kl_loss", kl_loss, sync_dist=self.sync_dist)  
 
     def img_saver(self, img, post_fix, i_type=".nii", meta_data=None, filename=None, **kwargs):
         """
@@ -470,7 +470,7 @@ class CLIPAE(pl.LightningModule):
 
         reconstructions, _, z= self(inputs)
         
-        cond_latent, cond_rec, cond_posterior = self.conditional_encode(cond_cat)
+        cond_latent, cond_rec= self.conditional_encode(cond_cat)
         self.check_model_params_detailed(self.cond_stage_model, "conditional_encode")
         self.check_model_params_detailed(self.proj_head, "proj_head")
         self.check_tensor(cond_latent,"cond_latent")
@@ -478,8 +478,8 @@ class CLIPAE(pl.LightningModule):
 
         condloss= self.contrastive_loss(z, cond_latent, self.proj_head)
         rec_loss = F.mse_loss(cond_rec, inputs)
-        kl_loss = self.kl_loss(cond_posterior)
-        cliploss = condloss + self.nll_loss_ratio*rec_loss + self.kl_loss_ratio*kl_loss
+        # kl_loss = self.kl_loss(cond_posterior)
+        cliploss = condloss + self.nll_loss_ratio*rec_loss # + self.kl_loss_ratio*kl_loss
 
         # print("!!!!!CLIPLoss:", cliploss)
 

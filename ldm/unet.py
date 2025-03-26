@@ -228,17 +228,17 @@ class ResBlock(TimestepBlock):
         else:
             self.skip_connection = conv_nd(dims, channels, self.out_channels, 1)
 
+    # def forward(self, x, emb):
+    #     """
+    #     Apply the block to a Tensor, conditioned on a timestep embedding.
+
+    #     :param x: an [N x C x ...] Tensor of features.
+    #     :param emb: an [N x emb_channels] Tensor of timestep embeddings.
+    #     :return: an [N x C x ...] Tensor of outputs.
+    #     """
+    #     return checkpoint(self._forward, (x, emb), self.parameters(), self.use_checkpoint)
+
     def forward(self, x, emb):
-        """
-        Apply the block to a Tensor, conditioned on a timestep embedding.
-
-        :param x: an [N x C x ...] Tensor of features.
-        :param emb: an [N x emb_channels] Tensor of timestep embeddings.
-        :return: an [N x C x ...] Tensor of outputs.
-        """
-        return checkpoint(self._forward, (x, emb), self.parameters(), self.use_checkpoint)
-
-    def _forward(self, x, emb):
         if self.updown:
             in_rest, in_conv = self.in_layers[:-1], self.in_layers[-1]
             h = in_rest(x)
@@ -489,7 +489,7 @@ class UNetModel(nn.Module):
         self.conv_resample = conv_resample
         self.num_classes = num_classes
         self.use_checkpoint = use_checkpoint
-        self.dtype = th.float16 if use_fp16 else th.float32
+        self.dtype = th.bfloat16 if use_fp16 else th.float32
         self.num_heads = num_heads
         self.num_head_channels = num_head_channels
         self.num_heads_upsample = num_heads_upsample

@@ -56,7 +56,7 @@ class UNet3D(nn.Module):
             ResBlock(features * 4, features * 8),
         )
 
-        self.bottleneck = ResBlock(features * 8, features * 16)
+        self.bottleneck = ResBlock(features * 8, features * 8)
     
         self.Decoder = nn.Sequential(
             nn.ConvTranspose3d(features * 8, features * 4, kernel_size=2, stride=2),
@@ -106,12 +106,13 @@ class UNet3D(nn.Module):
     def _forward(self, x):
         x_ = self.Encoder(x)
         y = self.bottleneck(x_)
-        posterior = DiagonalGaussianDistribution(y)
-        posterior = self.convert_precision(posterior)
-        z = posterior.sample()
+        # posterior = DiagonalGaussianDistribution(y)
+        # posterior = self.convert_precision(posterior)
+        # z = posterior.sample()
+        z = y
         y = self.Decoder(z)
         x = self.pre_proj(z)
-        return x, y, posterior
+        return z, y
 
     def forward(self, x):
         if self.use_checkpoint:

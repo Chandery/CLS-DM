@@ -36,7 +36,7 @@ def train(config):
         filename="latest",
     )
     train_ds = AlignDataSet(config,split = "train")
-    train_dl = MultiEpochsDataLoader(
+    train_dl = DataLoader(
         dataset=train_ds,
         shuffle=True,
         pin_memory=True,
@@ -45,7 +45,7 @@ def train(config):
         batch_size=config.batch_size,
     )
     val_ds = AlignDataSet(config, split = "val")
-    val_dl = MultiEpochsDataLoader(
+    val_dl = DataLoader(
         dataset=val_ds,
         shuffle=False,
         pin_memory=True,

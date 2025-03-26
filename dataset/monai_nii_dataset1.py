@@ -30,14 +30,15 @@ class MultiEpochsDataLoader(torch.utils.data.DataLoader):
         for i in range(len(self)):
             yield next(self.iterator)
 
-
-class _RepeatSampler(object):
+from torch.utils.data.sampler import BatchSampler
+class _RepeatSampler(BatchSampler):
     """ Sampler that repeats forever.
     Args:
         sampler (Sampler)
     """
 
     def __init__(self, sampler):
+        # super().__init__(sampler)
         self.sampler = sampler
 
     def __iter__(self):
@@ -81,8 +82,6 @@ class AlignDataSet(Base_DataSet):
                     # (Get_Key_slice(opt.select_slice_num), None),
 
                     (ToTensor(), ToTensor(), ToTensor()),
-                    # (lambda x:x.to(dtype=torch.float16),lambda x:x.to(dtype=torch.float16),lambda x:x.to(dtype=torch.float16))
-
                     ])
         self.data_augmentation_1 = List_Compose([(None,None,None)])
 

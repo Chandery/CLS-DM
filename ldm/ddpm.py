@@ -34,6 +34,7 @@ from .ddim import DDIMSampler
 from .Medicalnet.Vit import load_weight_for_vit_encoder, vit_encoder_b
 from .condition_extractor import UnetEncoder
 from .CLIPAutoEncoder.autoencoder import CLIPAE
+from .dpm_solver.sampler import DPMSolverSampler
 
 
 __conditioning_keys__ = {"concat": "c_concat", "crossattn": "c_crossattn", "adm": "y"}
@@ -509,6 +510,7 @@ class LatentDiffusion(DDPM):
         scale_by_std=False,
         high_low_mode=False,
         cond_nums=[1,2],
+        dpm_type="ddim",
         *args,
         **kwargs,
     ):
@@ -544,6 +546,7 @@ class LatentDiffusion(DDPM):
         self.bbox_tokenizer = None
         self.high_low_mode = high_low_mode
         self.cond_nums = cond_nums
+        self.dpm_type = dpm_type
 
         self.restarted_from_ckpt = False
         if ckpt_path is not None:
@@ -712,7 +715,7 @@ class LatentDiffusion(DDPM):
         output: (1,4,16,16,16) match the latent code z.
         """
         # * repeat second channel
-        cond, cond_rec, _ = self.cond_stage_model(cond)
+        cond, cond_rec = self.cond_stage_model(cond)
         return cond
 
     def meshgrid(self, h, w):
@@ -1537,22 +1540,30 @@ class LatentDiffusion(DDPM):
 
     def validation_step(self, batch, batch_idx):
         # _, loss_dict_no_ema, cond = self.shared_step(batch)
-        if self.current_epoch % 10 == 0 and batch_idx == 1:
-            # val_losses, cond = self.shared_step(batch)
-            # _, loss_dict_no_ema = val_losses
+        # if self.current_epoch % 10 == 0 and batch_idx == 1:
+        if batch_idx == 1:
+            val_losses, cond = self.shared_step(batch)
+            _, loss_dict_no_ema = val_losses
             # with self.ema_scope():
             #     # _, loss_dict_ema = self.shared_step(batch)
             #     val_losses, _ = self.shared_step(batch)
             #     _, loss_dict_ema = val_losses
             #     loss_dict_ema = {key + "_ema": loss_dict_ema[key] for key in loss_dict_ema}
-            # self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
+            self.log_dict(loss_dict_no_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
             # self.log_dict(loss_dict_ema, prog_bar=False, logger=True, on_step=False, on_epoch=True)
             # if self.current_epoch % 100 == 0 and batch_idx == 1:
             val_losses, cond = self.shared_step(batch)
-            ddim_sampler = DDIMSampler(self)
             shape = (self.batch_size, self.channels, self.image_size, self.image_size, self.image_size)
-            print(f"ddim shape :{shape}")
-            cond_z, _ = ddim_sampler.sample(50, batch_size=self.batch_size, shape=shape, conditioning=cond, verbose=False)
+            assert self.dpm_type in ["ddim", "dpm-solver"], "dpm_type must be either 'ddim' or 'dpm-solver'"
+            if self.dpm_type == "ddim":
+                ddim_sampler = DDIMSampler(self)
+                cond_z, _ = ddim_sampler.sample(50, batch_size=self.batch_size, shape=shape, conditioning=cond, verbose=False)
+                print(f"ddim shape :{shape}")
+            elif self.dpm_type == "dpm-solver":
+                dpm_sampler = DPMSolverSampler(self)
+                print(f"dpm shape :{shape}") 
+                cond_z, _ = dpm_sampler.sample(S=10, batch_size=self.batch_size, shape=shape, conditioning=cond, verbose=False)
+
             reconstructions = self.decode_first_stage(cond_z)
             reconstructions = torch.clamp(reconstructions, min=-1, max=1)
             reconstructions = (reconstructions + 1) * 127.5
@@ -1573,10 +1584,12 @@ class LatentDiffusion(DDPM):
             grid = make_grid(x)
             self.logger.experiment.add_image("val_gt", grid, self.global_step)
 
-            from scripts.new_metrics1 import Structural_Similarity
-            _, _, _, ssim_avg = Structural_Similarity(gt, rec, PIXEL_MAX=255)
+            from scripts.metrics import Structural_Similarity
+            gt = gt / 255 * self.config["CT_MIN_MAX"][1]
+            rec = rec / 255 * self.config["CT_MIN_MAX"][1]
+            _, _, _, ssim_avg = Structural_Similarity(gt, rec, PIXEL_MAX=self.config["DATA_MIN_MAX"][1])
             self.log("val/ssim", ssim_avg)
-            print(f"current epoch {self.current_epoch} aims a validation step, ssim: {ssim_avg}")
+            print(f"current epoch {self.current_epoch} aims a validation step,\n ssim: {ssim_avg}\n loss_val: {loss_dict_no_ema['val/loss_simple']}")
 
             # from skimage.metrics import structural_similarity as ssim
             # self.log("val_ssim", ssim(rec, gt, data_range=gt.max()-gt.min()))
@@ -1653,6 +1666,7 @@ class LatentDiffusion(DDPM):
         #     cond2_meta_data = batch["cond2"].meta
         # if 3 in self.cond_nums:
         #     cond3_meta_data = batch["cond3"].meta
+        image = batch["image"]
         filename = batch["filename"]
         filename = filename[0]
 
@@ -1670,21 +1684,34 @@ class LatentDiffusion(DDPM):
             self.img_saver(cond3, "xray_2", i_type=".jpg", filename=str(self.root_path)+'/'+str(filename)+"_xray_2")
             
 
-        ddim_sampler = DDIMSampler(self)
+        # ddim_sampler = DDIMSampler(self)
         shape = (self.batch_size, self.channels, self.image_size, self.image_size, self.image_size)
-        cond_z = self.p_sample_loop(cond=c, shape=shape)
+        # cond_z = self.p_sample_loop(cond=c, shape=shape)
         # cond_z, _ = ddim_sampler.sample(50, batch_size=1, shape=shape, conditioning=c, verbose=False)
-
+        # shape = (self.batch_size, self.channels, self.image_size, self.image_size, self.image_size)
+        assert self.dpm_type in ["ddim", "dpm-solver"], "dpm_type must be either 'ddim' or 'dpm-solver'"
+        if self.dpm_type == "ddim":
+            ddim_sampler = DDIMSampler(self)
+            cond_z, _ = ddim_sampler.sample(50, batch_size=self.batch_size, shape=shape, conditioning=c, verbose=False)
+            print(f"ddim shape :{shape}")
+        elif self.dpm_type == "dpm-solver":
+            dpm_sampler = DPMSolverSampler(self)
+            print(f"dpm shape :{shape}") 
+            cond_z, _ = dpm_sampler.sample(50, batch_size=self.batch_size, shape=shape, conditioning=c, verbose=False)
         z = self.encode_first_stage(x).sample()
 
-        cos_c = self.cossim(cond_z, c).item()
-        cos_z = self.cossim(cond_z, z).item()
+        # cos_c = self.cossim(cond_z, c).item()
+        # cos_z = self.cossim(cond_z, z).item()
 
-        print(f"cos cond_z with cond: {cos_c}")
-        print(f"cos cond_z with ae_z: {cos_z}")
+        # print(f"cos cond_z with cond: {cos_c}")
+        # print(f"cos cond_z with ae_z: {cos_z}")
 
         reconstructions = self.decode_first_stage(cond_z)
+        reconstructions = (reconstructions * 2 + image) / 3 
 
+        from scripts.metrics import Structural_Similarity
+        _, _, _, ssim_avg = Structural_Similarity(image, reconstructions, PIXEL_MAX=2500)
+        print(f"ssim: {ssim_avg}")
         # import nibabel as nib
 
         # nib_rec = nib.Nifti1Image(reconstructions[0, 0, ...].unsqueeze(-1).cpu().numpy(), np.eye(4))

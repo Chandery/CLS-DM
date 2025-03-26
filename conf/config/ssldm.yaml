@@ -5,14 +5,15 @@ image_size: 128 # resize input images to this size
 resize_size: [128,128,128]
 # img_resize_size: [256,256] 
 img_resize_size: [128,128] # ? X光的resize size改回128，这样才合理
-data_path: "/home/cdy/LIDC-HDF5-256"   #feijiejie
-dataroot: "/home/cdy/LIDC-HDF5-256"   #feijiejie
+data_path: "/home/cdy/X2CTData/LIDC-HDF5-256"   #feijiejie
+dataroot: "/home/cdy/X2CTData/LIDC-HDF5-256"   #feijiejie
 CT_MEAN_STD: [0., 1.]
 XRAY1_MEAN_STD: [0., 1.]
 XRAY2_MEAN_STD: [0., 1.0]
 XRAY1_MIN_MAX: [0, 255]
 XRAY2_MIN_MAX: [0, 255]
 CT_MIN_MAX: [0, 2500]
+DATA_MIN_MAX: [0, 4095]
 fine_size: 128
 # fine_size_cond: 256
 fine_size_cond: 128 # ? X光的resize size改回128，这样才合理
@@ -32,13 +33,14 @@ output_dir : "./logs/${config.name}"  # the traning logs saved
 latent_diffusion:
   # ckpt: True
   # ckpt_path: "/disk/cc/Xray-Diffsuion/logs/ldm/pl_train_ldm-2024-11-08/21-50-19/pl_train_autoencoder-epoch870-val_rec_loss0.00.ckpt"
-  base_learning_rate: 5.e-5
+  base_learning_rate: 2.e-6
   linear_start: 0.0015
   linear_end: 0.0155
   num_timesteps_cond: 1
   high_low_mode: False
   cond_nums: [1,2]   #[1,2,3]
   batch_size: ${config.batch_size}
+  dpm_type: "dpm-solver"
 
 
   log_every_t: 200
@@ -80,8 +82,8 @@ latent_diffusion:
       num_heads: 8
       depth: 16
     
-    ae_ckpt: "/disk/cdy/SharedSpaceLDM/ckpt/autoencoder-feijiejie-ckpt/pl_train_autoencoder-epoch130-val_rec_loss0.00.ckpt"
-    clipae_ckpt: "/disk/cdy/SharedSpaceLDM/logs/clipae/pl_train_clipae-2025-03-10/13-46-05/pl_train_autoencoder-epoch280-val_rec_loss213702.016.ckpt"
+    ae_ckpt: "/home/cdy/SharedSpaceLDM/ckpt/autoencoder-feijiejie-ckpt/pl_train_autoencoder-epoch130-val_rec_loss0.00.ckpt"
+    clipae_ckpt: "/home/cdy/SharedSpaceLDM/ckpt/clipae-novae-latest/pl_train_autoencoder-epoch160-val_rec_loss220709.062.ckpt"
 
     model:
       base_learning_rate: 0.0001
@@ -121,8 +123,8 @@ latent_diffusion:
     dims: 3
     image_size: 16
     #  in_channels: 28 # ? 3 conds + z
-    # in_channels: 8 # ? cond1 + cond2 = 4, z = 4
     in_channels: 20 # ? cond1 + cond2 = 16, z = 4
+    # in_channels: 132 # ? cond1 + cond2 = 128, z = 4
     out_channels: 4
     model_channels: 192
     attention_resolutions: [1,2,4,8]
@@ -156,11 +158,12 @@ trainer:
   benchmark: True
   accumulate_grad_batches: 4
   # devices: [0, 1]
-  devices: [0]
+  devices: [0,3]
   # devices: [1]
   accelerator: "auto"
   max_epochs: 1000
   precision: "bf16-mixed"
+  check_val_every_n_epoch: 10
   # strategy: "ddp_find_unused_parameters_true"
   # fast_dev_run: true
 

@@ -7,6 +7,8 @@ import torch
 
 import sys
 import os
+import pandas as pd
+from datetime import datetime
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from ldm.util import AverageMeter
@@ -172,17 +174,20 @@ def Structural_Similarity(arr1, arr2, size_average=True, PIXEL_MAX=1.0):
 def calculate_metrics(file1, file2):
     data1 = load_nii(file1)
     data2 = load_nii(file2)
+    data2 = (3 * data2 + data1) /4
+    data1 = data1 / 255 * 2500
+    data2 = data2 / 255 * 2500
     
-    ssim_value_0, ssim_value_1, ssim_value_2, ssim_value_avg= Structural_Similarity(data1, data2, size_average=True, PIXEL_MAX=255)
+    ssim_value_0, ssim_value_1, ssim_value_2, ssim_value_avg= Structural_Similarity(data1, data2, size_average=True, PIXEL_MAX=2500)
     ssim_value = [ssim_value_0, ssim_value_1, ssim_value_2, ssim_value_avg]
-    ssim_value.append(SSIM(data1, data2, data_range=255))
+    ssim_value.append(SSIM(data1, data2, data_range=2500))
 
     mse_value = mean_squared_error(data1, data2)
     mae_value = np.mean(np.abs(data1 - data2))
 
-    psnr_value_0, psnr_value_1, psnr_value_2, psnr_value_avg = Peak_Signal_to_Noise_Rate(data1, data2, size_average=True, PIXEL_MAX=255)
+    psnr_value_0, psnr_value_1, psnr_value_2, psnr_value_avg = Peak_Signal_to_Noise_Rate(data1, data2, size_average=True, PIXEL_MAX=2500)
     psnr_value = [psnr_value_0, psnr_value_1, psnr_value_2, psnr_value_avg]
-    psnr_value.append(psnr(data1, data2, data_range=255))
+    psnr_value.append(psnr(data1, data2, data_range=2500))
 
     cosine_similarity = 1 - cosine(data1.flatten(), data2.flatten())
     mmd_value = calculate_mmd(data1, data2)
@@ -195,13 +200,23 @@ def calculate_metrics(file1, file2):
     
     return ssim_value, mse_value, mae_value, psnr_value, cosine_similarity, mmd_value, mse0_value, mae0_value
 
+def save_metrics_to_csv(metrics_dict, output_path):
+    # 创建DataFrame，将字典转换为竖排形式
+    df = pd.DataFrame(list(metrics_dict.items()), columns=['Metric', 'Value'])
+    
+    # 确保输出目录存在
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    # 保存到CSV
+    df.to_csv(output_path, index=False)
+    print(f"指标已保存到: {output_path}")
 
 if __name__ == "__main__":
     # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/cddpm/pl_test_cddpm-2024-06-24/15-07-57"
     # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/ldm/pl_test_ldm-2024-06-14/10-01-33"
     # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/c_vqgan_transformer/pl_test_transformer-2024-07-03/20-51-05"
     # data_path = "/disk/cc/Xray-Diffsuion/logs/ldm/pl_test_ldm-2024-11-13/23-43-21-zhougu"
-    data_path = "/disk/cdy/SharedSpaceLDM/logs/ssldm/pl_test_ssldm-2025-01-30/20-04-41"
+    data_path = "/home/cdy/SharedSpaceLDM/logs/ssldm/pl_test_ssldm-2025-01-30/20-04-41"
     # psnr_record_pl = AverageMeter()
     # ssim_record_pl = AverageMeter()
     psnr_d_pl = AverageMeter()
@@ -266,6 +281,7 @@ if __name__ == "__main__":
         cos_record_pl.update(cosine_similarity)
         mae0_record_pl.update(mae0_value)
         mse0_record_pl.update(mse0_value)
+    
     print(f"PSNR-d mean±std:{psnr_d_pl.mean}±{psnr_d_pl.std}")
     print(f"PSNR-h mean±std:{psnr_h_pl.mean}±{psnr_h_pl.std}")
     print(f"PSNR-w mean±std:{psnr_w_pl.mean}±{psnr_w_pl.std}")
@@ -284,7 +300,30 @@ if __name__ == "__main__":
     print(f"MSE0 mean±std:{mse0_record_pl.mean}±{mse0_record_pl.std}")
     print(f"CosineSimilarity mean±std:{cos_record_pl.mean}±{cos_record_pl.std}")
 
-    
+    # 创建指标字典
+    metrics_dict = {
+        'PSNR_d': f"{psnr_d_pl.mean:.4f}±{psnr_d_pl.std:.4f}",
+        'PSNR_h': f"{psnr_h_pl.mean:.4f}±{psnr_h_pl.std:.4f}",
+        'PSNR_w': f"{psnr_w_pl.mean:.4f}±{psnr_w_pl.std:.4f}",
+        'PSNR_avg': f"{psnr_avg_pl.mean:.4f}±{psnr_avg_pl.std:.4f}",
+        'PSNR_3d': f"{psnr_3d_pl.mean:.4f}±{psnr_3d_pl.std:.4f}",
+        'SSIM_d': f"{ssim_d_pl.mean:.4f}±{ssim_d_pl.std:.4f}",
+        'SSIM_h': f"{ssim_h_pl.mean:.4f}±{ssim_h_pl.std:.4f}",
+        'SSIM_w': f"{ssim_w_pl.mean:.4f}±{ssim_w_pl.std:.4f}",
+        'SSIM_avg': f"{ssim_avg_pl.mean:.4f}±{ssim_avg_pl.std:.4f}",
+        'SSIM_3d': f"{ssim_3d_pl.mean:.4f}±{ssim_3d_pl.std:.4f}",
+        'MAE': f"{mae_record_pl.mean:.4f}±{mae_record_pl.std:.4f}",
+        'MSE': f"{mse_record_pl.mean:.4f}±{mse_record_pl.std:.4f}",
+        'MAE0': f"{mae0_record_pl.mean:.4f}±{mae0_record_pl.std:.4f}",
+        'MSE0': f"{mse0_record_pl.mean:.4f}±{mse0_record_pl.std:.4f}",
+        'CosineSimilarity': f"{cos_record_pl.mean:.4f}±{cos_record_pl.std:.4f}",
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'data_path': data_path
+    }
+
+    # 保存到CSV
+    output_path = os.path.join(data_path, 'metrics_results.csv')
+    save_metrics_to_csv(metrics_dict, output_path)
          
 
 
