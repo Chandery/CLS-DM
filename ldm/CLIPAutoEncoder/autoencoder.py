@@ -86,7 +86,7 @@ class CLIPAE(pl.LightningModule):
         # ! ---------------init cond_stage_model----------------
         model = UNet3D(in_channels=self.in_c, out_channels=1, init_features=16, cond_channels=16, precision=self.precision, use_checkpoint=False) # ? use_checkpoint=True，可以减少显存占用，但是速度会变慢
         self.cond_stage_model = model
-        self.proj_head = SpatialAligner(in_channels=128, out_channels=4)
+        self.proj_head = SpatialAligner(in_channels=16, out_channels=4)
         self.up_dim_head = nn.Sequential(
             # 首先在深度方向上扩展到self.xray_size
             nn.ConvTranspose3d(in_channels=1, out_channels=4, kernel_size=(self.xray_size//4,3,3), stride=(self.xray_size//4,1,1), padding=(0,1,1)),

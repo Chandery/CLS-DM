@@ -28,7 +28,8 @@ xray_channel: 1
  
 train_datasetfile: "./data/train.txt"
 val_datasetfile: "./data/test.txt"
-cond_nums: [1, 2]   #[1,2,3]
+dis_datasetfile: "./data/dis.txt"
+cond_nums: [1]   #[1,2,3]
 cond_size: 256 # resize condition images to this size
 
 cond1_order: [0,1,2,3,4]
@@ -89,7 +90,7 @@ trainer:
   # accumulate_grad_batches: 4
   # devices: [1]
   check_val_every_n_epoch: 10
-  devices: [1]
+  devices: [2]
   accelerator: "auto"
   max_epochs: 1000
   fast_dev_run: False

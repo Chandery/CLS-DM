@@ -53,7 +53,7 @@ class AlignDataSet(Base_DataSet):
         super(AlignDataSet, self).__init__()
         self.opt = opt
         self.ext = '.h5'
-        self.datasetfile = split == 'train' and opt.train_datasetfile or opt.val_datasetfile
+        self.datasetfile = split == 'train' and opt.train_datasetfile or split == 'dis' and opt.dis_datasetfile or opt.val_datasetfile
         self.dataset_paths = self.get_dataset_from_txt_file(self.datasetfile)
         self.dataset_paths = sorted(self.dataset_paths)
         self.dataset_size = len(self.dataset_paths)

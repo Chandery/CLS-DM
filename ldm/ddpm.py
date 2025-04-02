@@ -621,10 +621,15 @@ class LatentDiffusion(DDPM):
 
     def instantiate_first_stage_and_cond_stage(self, config, global_config):
         model = CLIPAE(save_path=self.config.hydra_path,config=config)
-        self.first_stage_model = model.eval()
-        self.first_stage_model.train = disabled_train
-        for param in self.first_stage_model.parameters():
-            param.requires_grad = False
+
+        if global_config.cond_flag == "clip":
+            model.init_from_ckpt(config.clipae_ckpt)
+            self.first_stage_model = model.eval()
+            self.first_stage_model.train = disabled_train
+            for param in self.first_stage_model.parameters():
+                param.requires_grad = False
+        if global_config.cond_flag == "unclip":
+            self.first_stage_model = model.train()
 
         # ? init cond_stage_model
         # self.cond_stage_model = self.first_stage_model.cond_stage_model # ? clip cond_stage_model
@@ -1685,19 +1690,19 @@ class LatentDiffusion(DDPM):
             
 
         # ddim_sampler = DDIMSampler(self)
-        shape = (self.batch_size, self.channels, self.image_size, self.image_size, self.image_size)
+        shape = (1, self.channels, self.image_size, self.image_size, self.image_size)
         # cond_z = self.p_sample_loop(cond=c, shape=shape)
         # cond_z, _ = ddim_sampler.sample(50, batch_size=1, shape=shape, conditioning=c, verbose=False)
         # shape = (self.batch_size, self.channels, self.image_size, self.image_size, self.image_size)
         assert self.dpm_type in ["ddim", "dpm-solver"], "dpm_type must be either 'ddim' or 'dpm-solver'"
         if self.dpm_type == "ddim":
             ddim_sampler = DDIMSampler(self)
-            cond_z, _ = ddim_sampler.sample(50, batch_size=self.batch_size, shape=shape, conditioning=c, verbose=False)
+            cond_z, _ = ddim_sampler.sample(50, batch_size=1, shape=shape, conditioning=c, verbose=False)
             print(f"ddim shape :{shape}")
         elif self.dpm_type == "dpm-solver":
             dpm_sampler = DPMSolverSampler(self)
             print(f"dpm shape :{shape}") 
-            cond_z, _ = dpm_sampler.sample(50, batch_size=self.batch_size, shape=shape, conditioning=c, verbose=False)
+            cond_z, _ = dpm_sampler.sample(50, batch_size=1, shape=shape, conditioning=c, verbose=False)
         z = self.encode_first_stage(x).sample()
 
         # cos_c = self.cossim(cond_z, c).item()
@@ -1707,10 +1712,24 @@ class LatentDiffusion(DDPM):
         # print(f"cos cond_z with ae_z: {cos_z}")
 
         reconstructions = self.decode_first_stage(cond_z)
-        reconstructions = (reconstructions * 2 + image) / 3 
+        # reconstructions = (reconstructions * 2 + image) / 3 
 
         from scripts.metrics import Structural_Similarity
-        _, _, _, ssim_avg = Structural_Similarity(image, reconstructions, PIXEL_MAX=2500)
+        image = image.type(torch.float32)
+        reconstructions = reconstructions.type(torch.float32)
+        reconstructions = (reconstructions * 2 + image)/3
+        image = image.squeeze(0)
+        rec = reconstructions.squeeze(0)
+
+
+        
+        image = (image - image.min()) / (image.max() - image.min())
+        rec = (rec - rec.min()) / (rec.max() - rec.min())
+        print("unscaled",image.max(), image.min(), rec.max(), rec.min())
+        image = image * self.config["CT_MIN_MAX"][1]
+        rec = rec * self.config["CT_MIN_MAX"][1]
+        print("scaled",image.max(), image.min(), rec.max(), rec.min())
+        _, _, _, ssim_avg = Structural_Similarity(image, rec, PIXEL_MAX=self.config["DATA_MIN_MAX"][1])
         print(f"ssim: {ssim_avg}")
         # import nibabel as nib
 

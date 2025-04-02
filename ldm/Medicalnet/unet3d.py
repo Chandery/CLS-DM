@@ -112,7 +112,7 @@ class UNet3D(nn.Module):
         z = y
         y = self.Decoder(z)
         x = self.pre_proj(z)
-        return z, y
+        return x, y
 
     def forward(self, x):
         if self.use_checkpoint:

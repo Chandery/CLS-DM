@@ -19,6 +19,7 @@ fine_size: 128
 fine_size_cond: 128 # ? X光的resize size改回128，这样才合理
 ct_channel: 128
 xray_channel: 1
+cond_flag: "unclip" # ? "clip" or "unclip" clip means use pretrained clipae/ unclip means use unet
  
 train_datasetfile: "./data/train.txt"
 val_datasetfile: "./data/test.txt"
@@ -33,7 +34,7 @@ output_dir : "./logs/${config.name}"  # the traning logs saved
 latent_diffusion:
   # ckpt: True
   # ckpt_path: "/disk/cc/Xray-Diffsuion/logs/ldm/pl_train_ldm-2024-11-08/21-50-19/pl_train_autoencoder-epoch870-val_rec_loss0.00.ckpt"
-  base_learning_rate: 2.e-6
+  base_learning_rate: 5.e-5
   linear_start: 0.0015
   linear_end: 0.0155
   num_timesteps_cond: 1
@@ -82,8 +83,8 @@ latent_diffusion:
       num_heads: 8
       depth: 16
     
-    ae_ckpt: "/home/cdy/SharedSpaceLDM/ckpt/autoencoder-feijiejie-ckpt/pl_train_autoencoder-epoch130-val_rec_loss0.00.ckpt"
-    clipae_ckpt: "/home/cdy/SharedSpaceLDM/ckpt/clipae-novae-latest/pl_train_autoencoder-epoch160-val_rec_loss220709.062.ckpt"
+    ae_ckpt: "/home/cdy/SharedSpaceLDM/ckpt/autoencoder-1248-feijiejie/pl_train_autoencoder-epoch690-val_rec_loss0.00.ckpt"
+    clipae_ckpt: "/home/cdy/SharedSpaceLDM/ckpt/clipae-1248-ckpt/pl_train_autoencoder-epoch669-val_rec_loss227305.078.ckpt"
 
     model:
       base_learning_rate: 0.0001
@@ -101,7 +102,7 @@ latent_diffusion:
         in_channels: 1
         out_ch: 1
         ch: 32
-        ch_mult: [1,2,4,4]  # num_down = len(ch_mult)-1   #1 2 2 2 4
+        ch_mult: [1,2,4,8]  # num_down = len(ch_mult)-1   #1 2 2 2 4
         num_res_blocks: 2
         attn_resolutions: []
         dropout: 0.0
@@ -126,7 +127,7 @@ latent_diffusion:
     in_channels: 20 # ? cond1 + cond2 = 16, z = 4
     # in_channels: 132 # ? cond1 + cond2 = 128, z = 4
     out_channels: 4
-    model_channels: 192
+    model_channels: 32
     attention_resolutions: [1,2,4,8]
     # attention_resolutions: []
     num_res_blocks: 2
@@ -158,7 +159,7 @@ trainer:
   benchmark: True
   accumulate_grad_batches: 4
   # devices: [0, 1]
-  devices: [0,3]
+  devices: [2]
   # devices: [1]
   accelerator: "auto"
   max_epochs: 1000
