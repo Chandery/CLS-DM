@@ -14,6 +14,7 @@ wandb
 *ckpt*
 *log*
 .vscode
+plt/*
 
 
 # C extensions
