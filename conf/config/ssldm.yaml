@@ -5,8 +5,8 @@ image_size: 128 # resize input images to this size
 resize_size: [128,128,128]
 # img_resize_size: [256,256] 
 img_resize_size: [128,128] # ? X光的resize size改回128，这样才合理
-data_path: "/home/cdy/X2CTData/LIDC-HDF5-256"   #feijiejie
-dataroot: "/home/cdy/X2CTData/LIDC-HDF5-256"   #feijiejie
+data_path: "/path"   #feijiejie
+dataroot: "/path"   #feijiejie
 CT_MEAN_STD: [0., 1.]
 XRAY1_MEAN_STD: [0., 1.]
 XRAY2_MEAN_STD: [0., 1.0]
@@ -83,17 +83,14 @@ latent_diffusion:
       num_heads: 8
       depth: 16
     
-    ae_ckpt: "/home/cdy/SharedSpaceLDM/ckpt/autoencoder-1248-feijiejie/pl_train_autoencoder-epoch690-val_rec_loss0.00.ckpt"
-    clipae_ckpt: "/home/cdy/SharedSpaceLDM/ckpt/clipae-1248-ckpt/pl_train_autoencoder-epoch669-val_rec_loss227305.078.ckpt"
+    ae_ckpt: "path"
+    clipae_ckpt: "path"
 
     model:
       base_learning_rate: 0.0001
       sync_dist: True
       # params:
-      monitor: "val/loss_ema"
-      # ckpt_path: "/disk/cc/Xray-Diffsuion/logs/autoencoder/pl_train_autoencoder-2024-10-28/16-40-35-zhougu/pl_train_autoencoder-epoch660-val_rec_loss0.00.ckpt"
-      # ckpt_path: "/disk/cdy/SharedSpaceLDM/logs/clipae/pl_train_clipae-2025-01-19/23-21-38/pl_train_autoencoder-epoch300-val_rec_loss0.01.ckpt"
-      # ckpt_path: "/disk/cc/Xray-Diffsuion/logs/autoencoder/pl_train_autoencoder-2024-09-25/10-47-33-pengu/pl_train_autoencoder-epoch290-val_rec_loss0.01.ckpt"
+      monitor: "val/loss_ema" 
       embed_dim: 4
       ddconfig:
         double_z: True
@@ -115,10 +112,6 @@ latent_diffusion:
         low_limit: 0.04
         disc_in_channels: 1
         perceptual_weight: 0
-  # cond_stage_config: 
-  #   cond_type: "pretrained_vit" # pretrained_vit or pretrained_resnet or resnet or vit or unetencoder
-  #   cond_ckpt_path: "/disk/cyq/2024/pretrained_weights/lvmmed_vit.pth"
-  #   # cond_ckpt_path: "/disk/cyq/2024/pretrained_weights/lvmmed_resnet.torch"
 
   unet_config:
     dims: 3

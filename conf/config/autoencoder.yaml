@@ -3,11 +3,7 @@ name: 'autoencoder'
 image_size: 128 # resize input images to this size
 # pad_channel: 16
 resize_size: [128,128,128]
-# cond_path: "/nvme/Pancreas-Dataset/pancreas_diff/cond_data/"
-# data_path: "/disk/ssy/data/drr/zhougu/zhougunii"   #zhougu
-data_path: "/disk/ssy/data/drr/feijiejie/all/"   #feijiejie
-# data_path: "/disk/ssy/data/drr/pengu/all/"   #pengu
-# data_path: "/disk/ssy/data/drr/yixianyan/yixianyan_nii/"   #yixianyan
+dataroot: "path"
 
 
 

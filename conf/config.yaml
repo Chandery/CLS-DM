@@ -23,9 +23,7 @@ config:
   num_samples: 50
   save_img: True
   save_dcm: False
-  model_path: "/disk/cyq/2024/My_Proj/med-guided-diffusion/logs/3d/train_diff-2024-04-19/22-14-56/model100000.pt"
-  # label_path: "/nvme/ct_reconstruction/label/patient0"
-  # source4cond: "/nvme/ct_reconstruction/source/patient0"
+  model_path: "path"
 
   job_name: ${hydra:job.name}
   hydra_path: ${hydra:runtime.output_dir}

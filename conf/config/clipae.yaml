@@ -4,12 +4,7 @@ tag: 'clipae with contrastive learning & auto-regression'
 image_size: 128 # resize input images to this size
 # pad_channel: 16
 resize_size: [128,128,128]
-# cond_path: "/nvme/Pancreas-Dataset/pancreas_diff/cond_data/"
-# data_path: "/disk/ssy/data/drr/zhougu/zhougunii"   #zhougu
-data_path: "/home/cdy/X2CTData/LIDC-HDF5-256"   #feijiejie
-dataroot: "/home/cdy/X2CTData/LIDC-HDF5-256"   #feijiejie
-# data_path: "/disk/ssy/data/drr/pengu/all/"   #pengu
-# data_path: "/disk/ssy/data/drr/yixianyan/yixianyan_nii/"   #yixianyan
+dataroot: "/path"   
 
 
 
@@ -51,7 +46,7 @@ cond_model_config:
   num_heads: 8
   depth: 16
 
-ae_ckpt: "/home/cdy/SharedSpaceLDM/ckpt/autoencoder-1248-feijiejie/pl_train_autoencoder-epoch690-val_rec_loss0.00.ckpt"
+ae_ckpt: "path"
 
 model:
   base_learning_rate: 3e-5  #zhougu 0.00001 others: 0.0001

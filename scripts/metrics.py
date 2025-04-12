@@ -215,11 +215,7 @@ def save_metrics_to_csv(metrics_dict, output_path):
     print(f"指标已保存到: {output_path}")
 
 if __name__ == "__main__":
-    # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/cddpm/pl_test_cddpm-2024-06-24/15-07-57"
-    # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/ldm/pl_test_ldm-2024-06-14/10-01-33"
-    # data_path = "/disk/cyq/2024/My_Proj/VQGAN-DDPM/logs/c_vqgan_transformer/pl_test_transformer-2024-07-03/20-51-05"
-    # data_path = "/disk/cc/Xray-Diffsuion/logs/ldm/pl_test_ldm-2024-11-13/23-43-21-zhougu"
-    data_path = "/home/cdy/SharedSpaceLDM/logs/ssldm/pl_test_ssldm-2025-04-01/19-07-14"
+    data_path = "path"
     # psnr_record_pl = AverageMeter()
     # ssim_record_pl = AverageMeter()
     psnr_d_pl = AverageMeter()
